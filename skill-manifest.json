@@ -1,0 +1,24 @@
+{
+  "name": "style-template-analyzer",
+  "version": "0.1.0",
+  "source": "standalone-github",
+  "runtime_copy_hint": "$CODEX_HOME/skills/style-template-analyzer",
+  "updated_at": "2026-07-28",
+  "notes": "Initial style-reference analysis, validation, OSS handoff, hash deduplication and one-template-per-JSON delivery workflow.",
+  "tracked_files": [
+    ".gitignore",
+    "package.json",
+    "pnpm-lock.yaml",
+    "SKILL.md",
+    "skill-manifest.json",
+    "agents/openai.yaml",
+    "references/style-template-contract.md",
+    "references/style-template-import.schema.json",
+    "references/style-template-import.sample.json",
+    "references/oss-handoff.md",
+    "scripts/validate_style_template.py",
+    "scripts/finalize_style_batch.mjs",
+    "scripts/test_finalize_style_batch.mjs",
+    "scripts/test_validate_style_template.py"
+  ]
+}

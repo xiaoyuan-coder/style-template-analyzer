@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/schemas/style-template-import.schema.json",
+  "title": "StyleTemplateImport",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "taxonomyVersion",
+    "key",
+    "title",
+    "description",
+    "category",
+    "tags",
+    "styleTags",
+    "referenceType",
+    "referenceStructure",
+    "supportedModes",
+    "contentScope",
+    "contentStrategy",
+    "referenceAssets",
+    "styleInstruction",
+    "contentExclusion",
+    "classificationConfidence",
+    "needsReview"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "taxonomyVersion": {"const": "2.0"},
+    "key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 60},
+    "description": {"type": "string", "minLength": 1, "maxLength": 240},
+    "category": {
+      "type": "object",
+      "required": ["primary", "secondary", "displayName"],
+      "properties": {
+        "primary": {
+          "enum": [
+            "hand-drawn-doodle",
+            "anime-comic",
+            "watercolor-painting",
+            "flat-graphic",
+            "print-halftone",
+            "pixel-art",
+            "material-3d",
+            "photographic-look",
+            "collage-experimental"
+          ]
+        },
+        "secondary": {"type": "string", "minLength": 1, "maxLength": 80},
+        "displayName": {"type": "string", "minLength": 1, "maxLength": 20}
+      },
+      "additionalProperties": false
+    },
+    "displayCategory": {"type": "string", "minLength": 1, "maxLength": 20},
+    "tags": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 30}, "uniqueItems": true},
+    "styleTags": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 30}, "uniqueItems": true},
+    "referenceType": {
+      "enum": [
+        "single-style-reference",
+        "paired-images",
+        "paired-comparison",
+        "annotated-paired-comparison"
+      ]
+    },
+    "referenceStructure": {"type": "string"},
+    "supportedModes": {
+      "type": "array",
+      "items": {"enum": ["whole_image", "subject_only"]},
+      "uniqueItems": true
+    },
+    "contentScope": {"enum": ["scene", "subject", "adaptive", "unavailable"]},
+    "contentStrategy": {
+      "enum": [
+        "full_scene_preservation",
+        "primary_subject_reconstruction",
+        "subject_cutout_stylization",
+        "salient_object_extraction"
+      ]
+    },
+    "referenceAssets": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 1000}
+    },
+    "styleInstruction": {"type": "string", "minLength": 20, "maxLength": 4000},
+    "contentExclusion": {"type": "string", "minLength": 20, "maxLength": 2000},
+    "classificationConfidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "needsReview": {"type": "boolean"},
+    "qualityStatus": {"enum": ["usable", "unusable"]}
+  },
+  "additionalProperties": true
+}

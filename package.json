@@ -1,0 +1,18 @@
+{
+  "name": "style-template-analyzer-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.8.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test scripts/test_finalize_style_batch.mjs && python scripts/test_validate_style_template.py",
+    "style:validate": "python scripts/validate_style_template.py",
+    "style:finalize": "node scripts/finalize_style_batch.mjs"
+  },
+  "dependencies": {
+    "ali-oss": "^6.23.0"
+  }
+}

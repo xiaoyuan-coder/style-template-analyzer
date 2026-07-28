@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0",
+  "taxonomyVersion": "2.0",
+  "key": "chrome-balloon-sculpture",
+  "title": "镜面气球雕塑",
+  "description": "把主体塑造成镜面金属气球雕塑",
+  "category": {
+    "primary": "material-3d",
+    "secondary": "chrome-inflatable-sculpture",
+    "displayName": "材质立体"
+  },
+  "displayCategory": "材质立体",
+  "tags": ["镜面", "气球", "雕塑", "3D"],
+  "styleTags": ["镜面", "气球", "雕塑", "3D"],
+  "referenceType": "single-style-reference",
+  "referenceStructure": "single-style-reference",
+  "supportedModes": ["subject_only"],
+  "contentScope": "subject",
+  "contentStrategy": "primary_subject_reconstruction",
+  "referenceAssets": {
+    "style": "https://assets.example.com/dev/style/templates/00000000-0000-4000-8000-000000000000.png"
+  },
+  "styleInstruction": "提取输入中的主要主体，保持身份、数量、姿态和轮廓，将其塑造成鼓胀圆润的镜面金属气球雕塑。",
+  "contentExclusion": "不要复制参考图中的具体主体、品牌、文字或场景，当前输入图决定主体身份与结构。",
+  "classificationConfidence": 0.94,
+  "needsReview": true
+}
