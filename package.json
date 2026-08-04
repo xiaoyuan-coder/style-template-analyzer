@@ -1,6 +1,6 @@
 {
   "name": "style-template-analyzer-skill",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.8.0",

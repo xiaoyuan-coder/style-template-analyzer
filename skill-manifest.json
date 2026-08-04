@@ -1,10 +1,10 @@
 {
   "name": "style-template-analyzer",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "source": "standalone-github",
   "runtime_copy_hint": "$CODEX_HOME/skills/style-template-analyzer",
-  "updated_at": "2026-07-28",
-  "notes": "Initial style-reference analysis, validation, OSS handoff, hash deduplication and one-template-per-JSON delivery workflow.",
+  "updated_at": "2026-07-29",
+  "notes": "All usable templates support both whole-image and subject-only runtime modes; subject-only removes the source background and defaults to a clean white #FFFFFF background.",
   "tracked_files": [
     ".gitignore",
     "package.json",

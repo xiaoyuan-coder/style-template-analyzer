@@ -211,8 +211,30 @@ def validate_data(
             errors.append("unusable 模板的 supportedModes 必须为空")
         if data.get("needsReview") is not True:
             errors.append("unusable 模板必须 needsReview=true")
-    elif not modes:
-        errors.append("可用模板至少支持一种模式")
+    elif set(modes) != MODES:
+        errors.append("可用模板必须同时支持 whole_image 和 subject_only")
+
+    mode_instructions = data.get("modeInstructions")
+    if quality != "unusable":
+        if not isinstance(mode_instructions, dict):
+            errors.append("可用模板必须提供 modeInstructions")
+        else:
+            if set(mode_instructions) != MODES:
+                errors.append("modeInstructions 必须且只能包含 whole_image 和 subject_only")
+            check_text(
+                errors,
+                "modeInstructions.whole_image",
+                mode_instructions.get("whole_image"),
+                20,
+                1000,
+            )
+            check_text(
+                errors,
+                "modeInstructions.subject_only",
+                mode_instructions.get("subject_only"),
+                20,
+                1000,
+            )
 
     assets = data.get("referenceAssets")
     if not isinstance(assets, dict) or not assets:

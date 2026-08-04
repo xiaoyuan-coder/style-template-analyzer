@@ -1,4 +1,4 @@
 interface:
   display_name: "风格化模板分析器"
-  short_description: "分析风格参考图，生成可入库模板并完成 OSS 交付"
-  default_prompt: "使用 $style-template-analyzer 批量分析风格参考图并准备 OSS JSON 交付。"
+  short_description: "所有可用模板支持整图与白底主体模式，生成并校验风格模板"
+  default_prompt: "使用 $style-template-analyzer 生成双模式风格模板：整图模式完整保留输入画布，主体模式提取主体并默认使用纯白 #FFFFFF 背景。"

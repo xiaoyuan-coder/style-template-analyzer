@@ -16,7 +16,8 @@
 - `displayCategory`：必须等于 `category.displayName`。
 - `tags`、`styleTags`：当前版本要求内容一致。
 - `referenceType`、`referenceStructure`：当前版本要求内容一致。
-- `supportedModes`: `whole_image`、`subject_only` 中至少一项；不可用模板可为空。
+- `supportedModes`: 可用模板固定为 `["whole_image", "subject_only"]`；不可用模板为空。
+- `modeInstructions`: 可用模板分别提供 `whole_image` 和 `subject_only` 运行规则。
 - `contentScope`: `scene`、`subject`、`adaptive` 或 `unavailable`。
 - `contentStrategy`、`referenceAssets`。
 - `styleInstruction`、`contentExclusion`。
@@ -51,6 +52,66 @@
 - `outputPosition`: 效果图所在位置；
 - `ignoredElements`: 箭头、软件 UI、说明文字、拼接边界等。
 
+## 转换范围优先规则
+
+先依据模板确定转换范围，再决定保留内容。不要用“是否属于产品”“是否像 UI”或“是否重要”筛选整图模式中的元素。
+
+| 转换范围 | 输入内容规则 | 常见对应 |
+| --- | --- | --- |
+| `whole_image` | 整张输入画布都是待保留内容。人物、背景、UI、对话框、字幕、角色名、按钮、HUD、文字、边框、贴纸、装饰和布局都要保留并统一风格化 | `full_scene_preservation`、`contentScope: scene` |
+| `subject_only` | 识别并风格化主要主体；移除原背景、UI、文字和其他非主体内容，默认使用纯白 `#FFFFFF` 背景 | 运行请求中的 `mode: subject_only` |
+
+所有可用模板同时支持两种转换范围，因此静态 `contentScope` 统一为 `adaptive`。`contentStrategy` 继续描述模板的风格重建倾向，不能覆盖用户本次选择的 `mode`。
+
+统一运行规则：
+
+```json
+"modeInstructions": {
+  "whole_image": "保留整张输入画布的全部内容、文字、UI、布局与空间关系，并对所有内容统一应用模板风格。",
+  "subject_only": "只提取并风格化主要主体，保持身份、数量、姿态、轮廓和关键内部特征；移除原背景及其他非主体内容，使用均匀纯白 #FFFFFF 背景。"
+}
+```
+
+`whole_image` 的“完整保留”包括：
+
+1. 保持画布比例、视角和总体构图。
+2. 保持所有可见区域及其空间关系，边缘和角落也要检查。
+3. 保持 UI、字幕和文字的位置、尺寸、层级及逐字内容，同时让字体、边框、图标和面板使用目标风格。
+4. 允许材质、笔触、配色、明暗和细节抽象程度发生变化。
+5. 禁止擅自裁掉、清空、简化或替换输入图的某一部分。
+
+## 外部平台水印例外
+
+水印清理是转换范围之外的窄例外：
+
+- 高置信度的外部平台来源水印默认移除，例如角落中的“小红书”、抖音或 TikTok 平台标记。移除后依据相邻背景、面板或纹理自然补全。
+- 账号名、二维码、分享贴纸、系统栏、浏览器/相册外壳只有在明确属于外部传播或截屏层时才移除。
+- 场景内品牌、游戏 UI、字幕、海报文字、物件标签、装饰贴纸和边框属于输入图内容；`whole_image` 必须保留并风格化。
+- 无法确定某个角标是否为外部水印时，`whole_image` 默认保留；该判断会实质改变结果时只追问这一项。
+- 用户明确要求拥有最高优先级。用户要求保留水印时保留，要求移除其他元素时移除。
+
+风格参考图中的具体人物、物件、文字、品牌、UI、水印和故事始终属于参考内容排除项，只允许提供视觉规律。
+
+提示词至少明确列出：
+
+```text
+Transformation scope: whole_image | subject_only | adaptive
+Whole-image invariant: <整张输入画布是否完整保留>
+Exact text: "<范围内需要逐字保留的文字>"
+Confirmed external watermark removal: <只列出高置信度平台水印>
+Reference-only exclusions: <参考图具体内容>
+```
+
+对于 `whole_image`，不要使用“只保留主体”“简化背景”“移除 UI”“删除文字”等指令，除非用户明确要求。
+
+对于 `subject_only`：
+
+1. 保持主体身份、数量、姿态、轮廓、关键内部特征和主体内部文字。
+2. 移除原背景及其他非主体元素。
+3. 默认在纯白 `#FFFFFF` 背景上重新构图，背景保持均匀，无纹理、渐变和无关物件。
+4. 保持主体边缘干净，不残留原背景碎片。
+5. 用户明确指定透明、其他纯色或新场景时，按用户指令覆盖白底默认值。
+
 ## 生成测试
 
 用户明确要求测试时，使用与参考主体明显不同的输入图。结果通过后可补充：
@@ -59,7 +120,19 @@
 - `testAssets.output`
 - `testNotes`
 
-跨主体测试至少检查身份、数量、姿态、风格强度、参考内容泄漏和背景策略。未经测试保持 `needsReview: true`。
+跨主体测试至少检查：
+
+- 身份、数量、姿态和空间关系；
+- 风格强度与背景策略；
+- 转换范围是否正确；
+- `whole_image` 是否逐区覆盖完整输入画布，包括 UI、字幕、文字、边缘和角落；
+- `subject_only` 是否完整保留主体、清除背景残片并使用纯白背景；
+- 范围内需要精确保留的文字是否逐字正确；
+- 已确认的外部平台水印是否完全消失；
+- 移除区域是否自然补全；
+- 参考图具体人物、物件、文字、品牌、UI 和水印是否泄漏。
+
+`whole_image` 中任一输入区域被擅自删除、漏画、裁切或语义替换，测试不得标记为通过。已确认移除的平台水印仍可见，或只是被风格化后保留，也不得标记为通过。未经测试保持 `needsReview: true`。
 
 ## 本地与 handoff
 

@@ -33,9 +33,13 @@ def template(asset: str = "./style.png") -> dict:
         "styleTags": ["镜面", "气球"],
         "referenceType": "single-style-reference",
         "referenceStructure": "single-style-reference",
-        "supportedModes": ["subject_only"],
-        "contentScope": "subject",
+        "supportedModes": ["whole_image", "subject_only"],
+        "contentScope": "adaptive",
         "contentStrategy": "primary_subject_reconstruction",
+        "modeInstructions": {
+            "whole_image": "保留整张输入画布的全部内容、文字、UI、布局与空间关系，并统一应用模板风格。",
+            "subject_only": "只提取并风格化主要主体，移除原背景和其他非主体内容，使用均匀纯白背景。",
+        },
         "referenceAssets": {"style": asset},
         "styleInstruction": "保持主体身份、数量、姿态和轮廓，将主体重建为圆润的镜面气球雕塑。",
         "contentExclusion": "不要复制参考图中的具体主体、文字、品牌和背景故事。",
@@ -76,6 +80,18 @@ class ValidatorTests(unittest.TestCase):
                 "dev/",
             )
             self.assertEqual(errors, [])
+
+    def test_rejects_single_mode_usable_template(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset = root / "style.png"
+            asset.write_bytes(b"image")
+            file = root / "style-template.json"
+            data = template()
+            data["supportedModes"] = ["subject_only"]
+            data["contentScope"] = "subject"
+            errors = MODULE.validate_data(data, file, "local", "", "")
+            self.assertTrue(any("同时支持" in error for error in errors))
 
 
 if __name__ == "__main__":
