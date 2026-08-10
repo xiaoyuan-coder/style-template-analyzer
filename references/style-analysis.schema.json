@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/schemas/style-analysis.schema.json",
+  "title": "StyleReferenceAnalysis",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "templateKey",
+    "referenceAsset",
+    "referenceType",
+    "referenceContentInventory",
+    "styleFingerprint",
+    "discriminativeFeatures",
+    "referenceContentBlocklist",
+    "classificationConfidence",
+    "qualityStatus"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "referenceAsset": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "referenceType": {
+      "enum": ["single-style-reference", "paired-images", "paired-comparison", "annotated-paired-comparison"]
+    },
+    "referenceContentInventory": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "maxLength": 120},
+      "uniqueItems": true
+    },
+    "styleFingerprint": {
+      "type": "object",
+      "required": ["imagingMedium", "shapeAndDetail", "linesAndEdges", "marksAndTexture", "colorOrganization", "toneAndSpace", "globalCoverage"],
+      "properties": {
+        "imagingMedium": {"type": "string", "minLength": 5, "maxLength": 500},
+        "shapeAndDetail": {"type": "string", "minLength": 5, "maxLength": 500},
+        "linesAndEdges": {"type": "string", "minLength": 5, "maxLength": 500},
+        "marksAndTexture": {"type": "string", "minLength": 5, "maxLength": 500},
+        "colorOrganization": {"type": "string", "minLength": 5, "maxLength": 500},
+        "toneAndSpace": {"type": "string", "minLength": 5, "maxLength": 500},
+        "globalCoverage": {"type": "string", "minLength": 5, "maxLength": 500}
+      },
+      "additionalProperties": false
+    },
+    "discriminativeFeatures": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["dimension", "feature", "evidence"],
+        "properties": {
+          "dimension": {"enum": ["imagingMedium", "shapeAndDetail", "linesAndEdges", "marksAndTexture", "colorOrganization", "toneAndSpace", "globalCoverage"]},
+          "feature": {"type": "string", "minLength": 3, "maxLength": 160},
+          "evidence": {"type": "string", "minLength": 3, "maxLength": 240}
+        },
+        "additionalProperties": false
+      }
+    },
+    "referenceContentBlocklist": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "maxLength": 120},
+      "uniqueItems": true
+    },
+    "classificationConfidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "qualityStatus": {"enum": ["usable", "unusable"]},
+    "reviewNotes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1, "maxLength": 500}
+    }
+  },
+  "additionalProperties": false
+}

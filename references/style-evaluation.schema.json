@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/schemas/style-evaluation.schema.json",
+  "title": "StyleTemplateEvaluation",
+  "type": "object",
+  "required": ["schemaVersion", "templateKey", "testProtocol", "cases", "aggregate"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "testProtocol": {
+      "type": "object",
+      "required": ["candidateCountPerInput", "independentReviewer"],
+      "properties": {
+        "candidateCountPerInput": {"type": "integer", "minimum": 2, "maximum": 8},
+        "independentReviewer": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "input", "output", "score", "verdict", "hardFailures", "dimensionScores", "evidence"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 80},
+          "input": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "output": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "score": {"type": "number", "minimum": 0, "maximum": 100},
+          "verdict": {"enum": ["pass", "fail"]},
+          "hardFailures": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}},
+          "dimensionScores": {
+            "type": "object",
+            "required": ["imagingMedium", "marksAndTexture", "colorOrganization", "linesAndEdges", "shapeAndDetail", "toneAndSpace", "globalCoverage"],
+            "properties": {
+              "imagingMedium": {"type": "number", "minimum": 0, "maximum": 20},
+              "marksAndTexture": {"type": "number", "minimum": 0, "maximum": 20},
+              "colorOrganization": {"type": "number", "minimum": 0, "maximum": 15},
+              "linesAndEdges": {"type": "number", "minimum": 0, "maximum": 15},
+              "shapeAndDetail": {"type": "number", "minimum": 0, "maximum": 10},
+              "toneAndSpace": {"type": "number", "minimum": 0, "maximum": 10},
+              "globalCoverage": {"type": "number", "minimum": 0, "maximum": 10}
+            },
+            "additionalProperties": false
+          },
+          "evidence": {"type": "string", "minLength": 20, "maxLength": 1000}
+        },
+        "additionalProperties": false
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "required": ["score", "verdict", "evidence"],
+      "properties": {
+        "score": {"type": "number", "minimum": 0, "maximum": 100},
+        "verdict": {"enum": ["pass", "fail"]},
+        "evidence": {"type": "string", "minLength": 20, "maxLength": 1000}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

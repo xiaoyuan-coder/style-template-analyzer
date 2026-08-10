@@ -1,132 +1,103 @@
 ---
 name: style-template-analyzer
-description: 分析单张风格参考图、原图与效果图对比图或批量图片目录，把参考图严格拆成可迁移的画风与禁止迁移的内容，生成全像素非摄影重绘提示词和 style-template.json，并用 90 分风格还原门槛校验真实生成结果。所有可用模板同时支持整图转换与白底主体转换；输入图独占主体、物件、场景、姿态、构图和文字，参考图只提供成像媒介、形体抽象、线条边缘、笔触纹理、色彩组织、明暗空间和细节密度。用于“风格化模板”“参考图风格迁移”“画风提取”“风格还原不足”“结果仍是写实照片”“参考人物或圆章被写进提示词”“批量读图分类”“上传 OSS 并交付 JSON”等任务。
+description: 分析单张风格参考图、原图/效果图对比或批量图片目录，分离可迁移画风与参考内容，生成研发可直接入库的 STYLE_REF JSON，并通过跨内容真实生成验证非摄影风格还原。用于风格化模板、画风提取、风格还原不足、结果仍像照片、参考人物或边框泄漏、风格模板字段整理、OSS 交付和批量质量评测。
 ---
 
 # 风格化模板分析器
 
-把风格参考图转成可复用、可测试、可入库的纯风格迁移模板。输入图提供全部内容，参考图只提供视觉渲染规律。模板不提供参考图中的人物、物件、场景、动作、构图载体、边框、文字或故事。
+把参考图编译成稳定的风格预设。用户上传图决定全部画面内容；固定参考图只决定成像媒介、形体抽象、线条边缘、笔触纹理、色彩组织、明暗空间和覆盖方式。
 
 ## 请求路由
 
-| 用户意图 | 流程 | 默认产物 | 必须读取 |
-| --- | --- | --- | --- |
-| 单图分析、生成模板数据 | `analyze` | `style-template.json` | `references/style-analysis-and-prompting.md`、`references/style-template-contract.md` |
-| 批量读图、分类、继续编号 | `batch-analyze` | 每模板一个 JSON、批次清单 | `references/style-analysis-and-prompting.md`、`references/style-template-contract.md` |
-| 测试效果、用 P2 生成 | `generation-test` | 真实生成图、风格评分与测试记录 | `references/style-analysis-and-prompting.md`、合同中的测试规则 |
-| 上传 OSS、最终 JSON、后端导入 | `oss-handoff` | handoff 目录内每模板一个纯 JSON | `references/oss-handoff.md` |
-| 检查现有数据 | `validate` | 校验报告 | `references/style-template-contract.md` |
+| 意图 | 产物 | 读取 |
+| --- | --- | --- |
+| 分析参考图、生成模板 | `style-analysis.json`、`style-template.json` | `references/style-analysis-and-prompting.md`、`references/style-template-contract.md` |
+| 批量分析 | 每模板两份 JSON、批次清单 | 同上 |
+| 真实生成与验收 | 候选图、`style-evaluation.json` | `references/style-analysis-and-prompting.md`、`references/style-template-contract.md` |
+| OSS 和研发交付 | `<key>.json` | `references/oss-handoff.md` |
+| 检查最终模板 | 校验结果 | `references/style-template-contract.md` |
 
-只做分析或整理时不要连接 OSS。只有用户明确要求上传、最终交付或后端导入时才执行 `oss-handoff`。
+普通分析停在本地。用户明确要求上传、最终交付或后端导入时再执行 OSS 流程。
+
+## 三层产物
+
+1. `style-analysis.json`：内部取证档案。保存七维指纹、3–5 个区分性特征和参考内容禁迁移清单；遵循 `references/style-analysis.schema.json`。
+2. `style-template.json`：研发运行模板。只保存 `key/title/description/kind/cover/referenceImage/imageSize/imageN/promptTemplate/inputSchema/preprocessSteps/metadata`；遵循 `references/style-template-import.schema.json`。
+3. `style-evaluation.json`：独立验收记录。保存至少四个跨内容案例、候选数量、逐项评分和总体结论；遵循 `references/style-evaluation.schema.json`。
+
+分析字段只进入第一层，评分字段只进入第三层。最终运行 JSON 保持研发字段纯净。
 
 ## 核心流程
 
-1. 检查图片格式、尺寸、重复文件和编号连续性。
-2. 区分参考结构：
-   - `single-style-reference`：单张完成图；
-   - `paired-images`：原图和目标风格分开提供；
-   - `paired-comparison`：同一图片内包含原图和结果；
-   - `annotated-paired-comparison`：还包含箭头、软件图标或说明。
-3. 先制作“输入内容账本”和“参考内容禁迁移清单”，再提取七维风格指纹。对比图只从原图到效果图的视觉变化提取风格；单张参考图采用保守提取。完整方法见 `references/style-analysis-and-prompting.md`。
-4. 让每个可用模板的 `supportedModes` 固定为 `["whole_image", "subject_only"]`。模式由用户在本次生成请求中选择，模板只定义风格；不可用模板继续使用空数组。
-5. 按用户选择的转换范围执行，转换范围优先于对元素的语义判断：
-   - `whole_image` / `full_scene_preservation`：把输入画布视为一个整体。保留人物、背景、前后景、UI、对话框、字幕、角色名、按钮、HUD、文字、边框、贴纸、装饰和布局，并让所有保留内容使用同一模板风格。不要因为某个元素看起来像 UI、字幕或覆盖层就将其删除。
-   - `subject_only`：识别并风格化主要主体，保持身份、数量、姿态、轮廓和关键内部特征；移除原背景、UI、文字及其他非主体内容，默认放置在纯白 `#FFFFFF` 背景上。用户明确指定透明、其他纯色或场景背景时覆盖白底默认值。
-6. 再处理例外：
-   - 用户明确要求移除或保留的元素，按用户指令执行。
-   - 高置信度识别出的外部平台来源水印，例如角落中的“小红书”、抖音或 TikTok 平台标记，默认移除并自然补全底层区域。
-   - 账号名、二维码、分享贴纸、系统栏或截图外壳只有在明确属于外部传播/截屏层时才移除；在 `whole_image` 中无法确定时默认保留，必要时只追问这一项。
-   - 风格参考图中的主体类型、身份、数量、姿态、表情、服饰、道具、场景、文字、品牌、UI、边框、徽章、几何容器、装饰符号、叙事主题和具体构图全部进入禁迁移清单。
-7. 为 `whole_image` 建立完整性清单，逐区记录输入画布中的主体、环境、UI、文字和边缘元素。这个清单用于防止漏画，不用于筛选“重要内容”。
-8. 保留 `contentStrategy` 作为检索元数据，不把它写成“follow exactly”等生成命令。运行时仅由 `mode` 决定内容范围：
-   - `full_scene_preservation`：保留完整场景；
-   - `primary_subject_reconstruction`：重建主要主体；
-   - `subject_cutout_stylization`：抠图后风格化；
-   - `salient_object_extraction`：提取主要物件组合。
-9. 使用“技法 + 视觉结果”为 `title` 和 `key` 命名。删除参考主体、场景、故事、几何载体和构图词，例如“太空角色”“书桌”“肖像圆章”“星空边框”。日志可以保留原素材名，生成语义提示词不引用带内容暗示的旧标题。
-10. 使用八类展示分类：手绘涂鸦、动漫漫画、水彩绘景、平面图形、版画网点、像素艺术、材质立体、拼贴实验。业务不提供摄影目标，禁止使用 `photographic-look / 摄影质感`；原属该类的模板按实际绘制技法重新分类。具体技法写入 `category.secondary`，新模板暂不输出 `tags` 或 `styleTags`。
-11. 按强制结构写 `styleInstruction`：内容权限、成像媒介、形体与细节、线条与边缘、笔触与纹理、色彩组织、明暗与空间、覆盖要求、去摄影化。`contentExclusion` 必须含具体的“参考内容禁迁移清单”。
-12. 写入每模板一个 `style-template.json`，随后运行 validator。
-13. 未完成跨主体真实生成测试时保留 `needsReview: true`。无法辨认风格的黑帧、损坏图或低信息图使用 `qualityStatus: unusable`。
+1. 检查参考图片格式、尺寸、重复文件和编号连续性。
+2. 识别参考结构：单图、分离的原图/效果图、拼接对比图、带标注对比图。
+3. 建立参考内容清单。记录人物、动物、物件、服饰、动作、场景、文字、品牌、UI、边框、徽章、几何容器和装饰。
+4. 提取七维风格指纹。把媒介、形体、线条、笔触、色彩、明暗和覆盖方式写成可观察事实。
+5. 从七维中选择 3–5 个最能区分该参考图的特征。区分性特征必须同时满足：肉眼可证、跨主体仍成立、能够改变最终像素、可用于评分。
+6. 用“技法 + 视觉结果”命名。标题、描述和新 key 只表达风格；存量 key 保持稳定。
+7. 编译 `promptTemplate`。使用第 2 张图作为唯一内容来源，第 1 张图作为纯风格参考；写入区分性特征、参考内容禁迁移和全像素去摄影化要求。
+8. 写入固定研发字段。`cover` 与 `referenceImage` 在本地阶段指向风格参考图；`inputSchema` 固定为一个 `image/source` 输入；`preprocessSteps` 固定为空数组。
+9. 运行模板 validator。字段、资源和提示词角色全部通过后才进入生成测试。
+10. 使用至少四张差异明显的输入图，每张生成 2–4 个候选并选出最接近参考风格的结果。
+11. 由独立复核者填写 `style-evaluation.json`。平均分达到 90、每个案例达到 90、七个维度各自达到 80% 且无硬失败时才通过。
 
-完整的风格边界与提示词结构见 `references/style-analysis-and-prompting.md`；转换范围、主体白底、水印例外和生成测试规则见 `references/style-template-contract.md`。
+## 内容权限
 
-生成提示词按以下优先级编排：
+- 第 2 张图片决定主体、数量、身份、姿态、轮廓、内部特征、物件、场景、文字、视角、画幅和构图。
+- 第 1 张图片决定视觉渲染规律，并且只提供这些规律。
+- App 的抠图功能处理背景移除。风格模板保持用户当前输入内容；参考图中的白底、圆章、贴纸排版或居中构图不获得迁移权限。
+- 业务输出全部为非摄影重绘。网点、颗粒、色偏、纸纹和漏光必须参与形体与明暗构成，形成完整新画面。
 
-1. `STYLE TRANSFER ONLY` 与输入图内容独占权；
-2. `Transformation scope` 和本次模式；
-3. 输入内容锁定清单；
-4. 七维风格指纹与全像素覆盖要求；
-5. 参考内容禁迁移清单；
-6. 所有模板统一执行的去摄影化禁令；
-7. 输出前自检。
+## 提示词编译
 
-不要把模板标题、参考图主题或 `contentStrategy` 当成风格命令。不要使用“参考图构图语言”“按参考图重新构图”“加入参考图同款元素”等表达。
+最终 `promptTemplate` 使用四段：
 
-所有可用模板都必须明确要求从轮廓、局部颜色到背景纹理全部重绘。写实皮肤、真实毛发、照片型物体表面、摄影景深、原始镜头光照和原照片像素必须完全消失；仅叠加调色、颗粒、网点、漏光或纸张纹理直接判定为失败。
+1. 第 2 张图片的内容独占权与保真项目；
+2. 第 1 张图片的风格权限与 3–5 个区分性特征；
+3. 当前参考图的具体内容禁迁移清单；
+4. 全像素重绘、去摄影化和可识别性检查。
 
-## 目录约定
-
-批量数据建议采用：
-
-```text
-<batch>/
-├── 风格化素材/
-├── 模板数据/
-│   └── 0001/style-template.json
-└── 模板清单.json
-```
-
-JSON 内本地资源路径相对当前 `style-template.json` 解析。一个模板可以包含多个 `referenceAssets`，但每个值都必须指向图片。
+目标长度为 120–700 个中文字符，最大 1200。七维完整分析保存在 `style-analysis.json`，最终提示词只携带最有辨识度、彼此不重复的特征。完整方法见 `references/style-analysis-and-prompting.md`。
 
 ## 校验
 
-单模板：
+模板：
 
 ```bash
 python skills/style-template-analyzer/scripts/validate_style_template.py \
   <template>/style-template.json
 ```
 
-批量：
+验收：
 
 ```bash
-python skills/style-template-analyzer/scripts/validate_style_template.py \
-  <batch>/模板数据
+python skills/style-template-analyzer/scripts/validate_style_evaluation.py \
+  <template>/style-evaluation.json
 ```
 
-本地 OSS 预检，不上传：
+本地 OSS 预检：
 
 ```bash
 pnpm style:finalize <batch>/模板数据 --dry-run
 ```
 
-校验失败时修正源 JSON 或资源路径后重跑。不要跳过失败模板上传剩余批次。
+## OSS 交付
 
-## OSS 最终交付
-
-用户明确要求后，执行：
+用户明确要求后执行：
 
 ```bash
 pnpm style:finalize <batch>/模板数据 \
   --output artifacts/style-template-analyzer/handoff/<batch-id>
 ```
 
-脚本上传 `referenceAssets`，按 SHA-256 去重，上传后执行 `HEAD`，再输出 URL 版 JSON。它不会覆盖本地模板，也不会把 `testAssets` 放进入库 JSON。详细规则见 `references/oss-handoff.md`。
+脚本上传 `cover` 和 `referenceImage`，按 SHA-256 去重，执行 PUT/HEAD 校验，再输出远端 URL 版纯运行 JSON。源文件保持不变。
 
-## 回复规则
+## 完成标准
 
-完成后简洁报告：
-
-- 本地模板目录与清单路径；
-- 模板数量、分类统计、待复核和不可用数量；
-- validator、OSS PUT/HEAD、远端 URL 校验结果；
-- handoff 目录及实际交给后端的 `<template-key>.json`；
-- 使用了整图或主体转换范围，是否完整保留范围内内容；
-- 保留并风格化了哪些文字，移除了哪些已确认的外部平台水印；
-- 风格还原总分、七维分项、硬失败项和是否达到 90 分；
-- 参考内容禁迁移清单中是否出现泄漏；
-- 未执行的上传或生成测试明确写“未执行”；
-- 是否修改仓库内 Skill，是否同步全局运行副本。
-
-除非用户明确要求，不在聊天中粘贴完整 JSON、完整提示词或 OSS 配置。
+- 本地分析、运行模板和验收记录职责清楚；
+- 最终 JSON 只包含研发字段；
+- 用户图和风格图权限完整分离；
+- 提示词包含具体风格特征与具体参考内容禁迁移项；
+- 真实验收覆盖至少四类内容和多个候选；
+- 通过模板平均分与逐案例均达到 90，关键维度无短板；
+- 上传、生成测试和独立复核的实际执行情况如实报告。

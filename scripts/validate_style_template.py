@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate local or OSS-ready style-template.json files without dependencies."""
+"""Validate local or OSS-ready STYLE_REF runtime JSON without dependencies."""
 
 from __future__ import annotations
 
@@ -13,74 +13,34 @@ from urllib.parse import urlparse
 
 
 KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
+SIZE_RE = re.compile(r"^(\d{3,4})x(\d{3,4})$")
 OSS_OBJECT_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"
     r"[0-9a-f]{12}\.(?:png|jpe?g|webp|gif|avif)$",
     re.IGNORECASE,
 )
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"}
-CATEGORIES = {
-    "hand-drawn-doodle": "手绘涂鸦",
-    "anime-comic": "动漫漫画",
-    "watercolor-painting": "水彩绘景",
-    "flat-graphic": "平面图形",
-    "print-halftone": "版画网点",
-    "pixel-art": "像素艺术",
-    "material-3d": "材质立体",
-    "collage-experimental": "拼贴实验",
-}
-REFERENCE_TYPES = {
-    "single-style-reference",
-    "paired-images",
-    "paired-comparison",
-    "annotated-paired-comparison",
-}
-MODES = {"whole_image", "subject_only"}
-STRATEGIES = {
-    "full_scene_preservation",
-    "primary_subject_reconstruction",
-    "subject_cutout_stylization",
-    "salient_object_extraction",
-}
-REQUIRED = {
-    "schemaVersion",
-    "taxonomyVersion",
+REQUIRED_FIELDS = {
     "key",
     "title",
     "description",
-    "category",
-    "displayCategory",
-    "referenceType",
-    "referenceStructure",
-    "supportedModes",
-    "contentScope",
-    "contentStrategy",
-    "referenceAssets",
-    "styleInstruction",
-    "contentExclusion",
-    "classificationConfidence",
-    "needsReview",
+    "kind",
+    "cover",
+    "referenceImage",
+    "imageSize",
+    "imageN",
+    "promptTemplate",
+    "inputSchema",
+    "preprocessSteps",
+    "metadata",
 }
-STYLE_INSTRUCTION_MARKERS = (
-    "内容权限：",
-    "成像媒介：",
-    "形体与细节：",
-    "线条与边缘：",
-    "笔触与纹理：",
-    "色彩组织：",
-    "明暗与空间：",
-    "覆盖要求：",
-    "去摄影化：",
-)
-STYLE_DIMENSION_LIMITS = {
-    "imagingMedium": 20,
-    "marksAndTexture": 20,
-    "colorOrganization": 15,
-    "linesAndEdges": 15,
-    "shapeAndDetail": 10,
-    "toneAndSpace": 10,
-    "globalCoverage": 10,
-}
+ALLOWED_FIELDS = REQUIRED_FIELDS
+INPUT_FIELDS = {"type", "id", "label", "hint", "required", "maxCount", "private"}
+METADATA_FIELDS = {"tags", "styleAnalysis", "sourceRef"}
+SOURCE_REF_FIELDS = {"producerKey", "styleAsset", "taxonomyVersion"}
+STYLE_ANALYSIS_FIELDS = {"surfaceTexture", "composition", "backgroundPolicy", "note"}
+CONTENT_IMAGE_MARKERS = ("第 2 张图片", "第2张图片", "第 2 张图", "第2张图")
+STYLE_IMAGE_MARKERS = ("第 1 张图片", "第1张图片", "第 1 张图", "第1张图")
 
 
 def normalize_prefix(value: str) -> str:
@@ -109,81 +69,24 @@ def managed_url(value: str, domain: str, prefix: str) -> bool:
 
 
 def check_text(errors: list[str], path: str, value: Any, minimum: int, maximum: int) -> None:
-    if not isinstance(value, str) or not minimum <= len(value) <= maximum:
-        errors.append(f"{path} 必须是长度 {minimum}-{maximum} 的字符串")
+    if not isinstance(value, str) or not minimum <= len(value.strip()) <= maximum:
+        errors.append(f"{path} 必须是长度 {minimum}-{maximum} 的非空字符串")
 
 
-def check_string_array(errors: list[str], path: str, value: Any, maximum: int = 30) -> None:
+def check_string_array(errors: list[str], path: str, value: Any, maximum_items: int = 10) -> None:
     if not isinstance(value, list):
         errors.append(f"{path} 必须是数组")
         return
-    if len(value) != len(set(item for item in value if isinstance(item, str))):
-        errors.append(f"{path} 含有重复项")
+    if len(value) > maximum_items:
+        errors.append(f"{path} 最多包含 {maximum_items} 项")
+    normalized: list[str] = []
     for index, item in enumerate(value):
-        if not isinstance(item, str) or not 1 <= len(item) <= maximum:
-            errors.append(f"{path}[{index}] 必须是长度 1-{maximum} 的字符串")
-
-
-def check_style_instruction(errors: list[str], value: Any) -> None:
-    check_text(errors, "styleInstruction", value, 200, 4000)
-    if not isinstance(value, str):
-        return
-    for marker in STYLE_INSTRUCTION_MARKERS:
-        if marker not in value:
-            errors.append(f"styleInstruction 缺少强制风格结构：{marker}")
-
-
-def check_style_evaluation(errors: list[str], value: Any) -> None:
-    if not isinstance(value, dict):
-        errors.append("styleEvaluation 必须是 object")
-        return
-    required = {"score", "verdict", "hardFailures", "dimensionScores", "evidence"}
-    for field in sorted(required - set(value)):
-        errors.append(f"styleEvaluation.{field} 缺失")
-
-    score = value.get("score")
-    if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 100:
-        errors.append("styleEvaluation.score 必须在 0-100 之间")
-    verdict = value.get("verdict")
-    if verdict not in {"pass", "fail"}:
-        errors.append("styleEvaluation.verdict 只能是 pass 或 fail")
-    hard_failures = value.get("hardFailures")
-    check_string_array(errors, "styleEvaluation.hardFailures", hard_failures, 120)
-
-    dimensions = value.get("dimensionScores")
-    if not isinstance(dimensions, dict):
-        errors.append("styleEvaluation.dimensionScores 必须是 object")
-    else:
-        if set(dimensions) != set(STYLE_DIMENSION_LIMITS):
-            errors.append("styleEvaluation.dimensionScores 必须且只能包含七个评分维度")
-        total = 0.0
-        valid_total = True
-        for field, maximum in STYLE_DIMENSION_LIMITS.items():
-            dimension_score = dimensions.get(field)
-            if (
-                isinstance(dimension_score, bool)
-                or not isinstance(dimension_score, (int, float))
-                or not 0 <= dimension_score <= maximum
-            ):
-                errors.append(f"styleEvaluation.dimensionScores.{field} 必须在 0-{maximum} 之间")
-                valid_total = False
-            else:
-                total += float(dimension_score)
-        if valid_total and isinstance(score, (int, float)) and not isinstance(score, bool):
-            if abs(total - float(score)) > 0.001:
-                errors.append("styleEvaluation.score 必须等于七个维度分数之和")
-
-    check_text(errors, "styleEvaluation.evidence", value.get("evidence"), 20, 1000)
-    if isinstance(hard_failures, list) and hard_failures:
-        if score != 0:
-            errors.append("存在 hardFailures 时 styleEvaluation.score 必须为 0")
-        if verdict != "fail":
-            errors.append("存在 hardFailures 时 styleEvaluation.verdict 必须为 fail")
-    if verdict == "pass":
-        if not isinstance(score, (int, float)) or isinstance(score, bool) or score < 90:
-            errors.append("styleEvaluation.verdict=pass 要求 score >= 90")
-        if isinstance(hard_failures, list) and hard_failures:
-            errors.append("styleEvaluation.verdict=pass 时 hardFailures 必须为空")
+        if not isinstance(item, str) or not 1 <= len(item.strip()) <= 30:
+            errors.append(f"{path}[{index}] 必须是长度 1-30 的非空字符串")
+        else:
+            normalized.append(item.strip())
+    if len(normalized) != len(set(normalized)):
+        errors.append(f"{path} 含有重复项")
 
 
 def check_asset(
@@ -199,8 +102,7 @@ def check_asset(
         errors.append(f"{field} 必须是非空图片路径或 URL")
         return
     parsed = urlparse(value)
-    has_scheme = bool(parsed.scheme)
-    if has_scheme:
+    if parsed.scheme:
         if asset_mode == "local":
             errors.append(f"{field} 在 local 模式下不能使用 URL")
         elif not domain:
@@ -218,6 +120,84 @@ def check_asset(
         errors.append(f"{field} 本地图片不存在：{resolved}")
 
 
+def check_prompt(errors: list[str], value: Any) -> None:
+    check_text(errors, "promptTemplate", value, 120, 1200)
+    if not isinstance(value, str):
+        return
+    checks = [
+        (any(marker in value for marker in CONTENT_IMAGE_MARKERS) and "唯一内容来源" in value,
+         "用户图内容权限：第 2 张图片是唯一内容来源"),
+        (any(marker in value for marker in STYLE_IMAGE_MARKERS) and "风格参考" in value,
+         "风格图权限：第 1 张图片仅作为风格参考"),
+        (any(marker in value for marker in ("完整重绘", "完整重建", "全部重绘")),
+         "全像素重绘要求"),
+        (any(marker in value for marker in ("严禁复制", "禁止复制", "禁止带入", "不得复制")),
+         "参考内容禁迁移要求"),
+        ("原照片像素" in value and "消失" in value,
+         "去摄影化要求：原照片像素必须消失"),
+    ]
+    for valid, label in checks:
+        if not valid:
+            errors.append(f"promptTemplate 缺少{label}")
+
+
+def check_input_schema(errors: list[str], value: Any) -> None:
+    if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], dict):
+        errors.append("inputSchema 必须且只能包含一个 image/source 输入")
+        return
+    item = value[0]
+    extras = set(item) - INPUT_FIELDS
+    if extras:
+        errors.append(f"inputSchema[0] 包含未知字段：{', '.join(sorted(extras))}")
+    expected = {
+        "type": "image",
+        "id": "source",
+        "required": True,
+        "maxCount": 1,
+        "private": False,
+    }
+    for field, expected_value in expected.items():
+        if item.get(field) != expected_value:
+            errors.append(f"inputSchema[0].{field} 必须为 {json.dumps(expected_value, ensure_ascii=False)}")
+    check_text(errors, "inputSchema[0].label", item.get("label"), 1, 40)
+    check_text(errors, "inputSchema[0].hint", item.get("hint"), 1, 100)
+
+
+def check_metadata(errors: list[str], value: Any, key: Any) -> None:
+    if not isinstance(value, dict):
+        errors.append("metadata 必须是 object")
+        return
+    extras = set(value) - METADATA_FIELDS
+    if extras:
+        errors.append(f"metadata 包含未知字段：{', '.join(sorted(extras))}")
+    if "tags" in value:
+        check_string_array(errors, "metadata.tags", value.get("tags"))
+    source = value.get("sourceRef")
+    if not isinstance(source, dict):
+        errors.append("metadata.sourceRef 必须是 object")
+    else:
+        extras = set(source) - SOURCE_REF_FIELDS
+        if extras:
+            errors.append(f"metadata.sourceRef 包含未知字段：{', '.join(sorted(extras))}")
+        for field in sorted(SOURCE_REF_FIELDS - set(source)):
+            errors.append(f"metadata.sourceRef.{field} 缺失")
+        if source.get("producerKey") != key:
+            errors.append("metadata.sourceRef.producerKey 必须等于顶层 key")
+        check_text(errors, "metadata.sourceRef.styleAsset", source.get("styleAsset"), 1, 500)
+        if source.get("taxonomyVersion") != "2.0":
+            errors.append("metadata.sourceRef.taxonomyVersion 必须为 2.0")
+    analysis = value.get("styleAnalysis")
+    if analysis is not None:
+        if not isinstance(analysis, dict):
+            errors.append("metadata.styleAnalysis 必须是 object")
+        else:
+            extras = set(analysis) - STYLE_ANALYSIS_FIELDS
+            if extras:
+                errors.append(f"metadata.styleAnalysis 包含未知字段：{', '.join(sorted(extras))}")
+            for field, item in analysis.items():
+                check_text(errors, f"metadata.styleAnalysis.{field}", item, 1, 500)
+
+
 def validate_data(
     data: Any,
     template_file: Path,
@@ -228,172 +208,42 @@ def validate_data(
     errors: list[str] = []
     if not isinstance(data, dict):
         return ["根节点必须是 JSON object"]
-    for field in sorted(REQUIRED - set(data)):
+    for field in sorted(REQUIRED_FIELDS - set(data)):
         errors.append(f"{field} 缺失")
+    extras = set(data) - ALLOWED_FIELDS
+    if extras:
+        errors.append(f"不允许的最终交付字段：{', '.join(sorted(extras))}")
 
-    if data.get("schemaVersion") != "1.0":
-        errors.append("schemaVersion 必须为 1.0")
-    if data.get("taxonomyVersion") != "2.0":
-        errors.append("taxonomyVersion 必须为 2.0")
-    if not KEY_RE.fullmatch(str(data.get("key", ""))):
+    key = data.get("key")
+    if not isinstance(key, str) or not KEY_RE.fullmatch(key):
         errors.append("key 格式不合法")
     check_text(errors, "title", data.get("title"), 1, 60)
     check_text(errors, "description", data.get("description"), 1, 240)
+    if data.get("kind") != "STYLE_REF":
+        errors.append("kind 必须为 STYLE_REF")
+    check_asset(errors, template_file, "cover", data.get("cover"), asset_mode, domain, prefix)
+    check_asset(
+        errors,
+        template_file,
+        "referenceImage",
+        data.get("referenceImage"),
+        asset_mode,
+        domain,
+        prefix,
+    )
 
-    category = data.get("category")
-    if not isinstance(category, dict):
-        errors.append("category 必须是 object")
-    else:
-        primary = category.get("primary")
-        if primary not in CATEGORIES:
-            errors.append("category.primary 不在八类体系中")
-        check_text(errors, "category.secondary", category.get("secondary"), 1, 80)
-        expected_name = CATEGORIES.get(primary)
-        if expected_name and category.get("displayName") != expected_name:
-            errors.append("category.displayName 与 primary 不匹配")
-        if data.get("displayCategory") != category.get("displayName"):
-            errors.append("displayCategory 必须等于 category.displayName")
+    image_size = data.get("imageSize")
+    match = SIZE_RE.fullmatch(image_size) if isinstance(image_size, str) else None
+    if not match or any(not 256 <= int(part) <= 4096 for part in match.groups()):
+        errors.append("imageSize 必须是 256-4096 范围内的 <宽>x<高>")
+    if data.get("imageN") != 1 or isinstance(data.get("imageN"), bool):
+        errors.append("imageN 必须为整数 1")
 
-    if "tags" in data:
-        check_string_array(errors, "tags", data.get("tags"))
-    if "styleTags" in data:
-        check_string_array(errors, "styleTags", data.get("styleTags"))
-
-    reference_type = data.get("referenceType")
-    if reference_type not in REFERENCE_TYPES:
-        errors.append("referenceType 不合法")
-    if data.get("referenceStructure") != reference_type:
-        errors.append("referenceStructure 必须等于 referenceType")
-
-    modes = data.get("supportedModes")
-    if not isinstance(modes, list) or len(modes) != len(set(modes)):
-        errors.append("supportedModes 必须是无重复数组")
-        modes = []
-    elif any(mode not in MODES for mode in modes):
-        errors.append("supportedModes 含有未知模式")
-    expected_scope = {
-        (): "unavailable",
-        ("subject_only",): "subject",
-        ("whole_image",): "scene",
-        ("subject_only", "whole_image"): "adaptive",
-    }.get(tuple(sorted(modes)))
-    if expected_scope and data.get("contentScope") != expected_scope:
-        errors.append(f"contentScope 应为 {expected_scope}")
-    if data.get("contentStrategy") not in STRATEGIES:
-        errors.append("contentStrategy 不合法")
-
-    quality = data.get("qualityStatus")
-    if quality is not None and quality not in {"usable", "unusable"}:
-        errors.append("qualityStatus 只能是 usable 或 unusable")
-    if quality == "unusable":
-        if modes:
-            errors.append("unusable 模板的 supportedModes 必须为空")
-        if data.get("needsReview") is not True:
-            errors.append("unusable 模板必须 needsReview=true")
-    elif set(modes) != MODES:
-        errors.append("可用模板必须同时支持 whole_image 和 subject_only")
-
-    mode_instructions = data.get("modeInstructions")
-    if quality != "unusable":
-        if not isinstance(mode_instructions, dict):
-            errors.append("可用模板必须提供 modeInstructions")
-        else:
-            if set(mode_instructions) != MODES:
-                errors.append("modeInstructions 必须且只能包含 whole_image 和 subject_only")
-            check_text(
-                errors,
-                "modeInstructions.whole_image",
-                mode_instructions.get("whole_image"),
-                20,
-                1000,
-            )
-            check_text(
-                errors,
-                "modeInstructions.subject_only",
-                mode_instructions.get("subject_only"),
-                20,
-                1000,
-            )
-    assets = data.get("referenceAssets")
-    if not isinstance(assets, dict) or not assets:
-        errors.append("referenceAssets 必须是非空 object")
-    else:
-        for name, value in assets.items():
-            if not re.fullmatch(r"[a-z][a-zA-Z0-9_-]{0,39}", str(name)):
-                errors.append(f"referenceAssets.{name} 名称不合法")
-            check_asset(
-                errors,
-                template_file,
-                f"referenceAssets.{name}",
-                value,
-                asset_mode,
-                domain,
-                prefix,
-            )
-
-    if reference_type in {"paired-comparison", "annotated-paired-comparison"}:
-        layout = data.get("comparisonLayout")
-        if not isinstance(layout, dict):
-            errors.append("对比图模板必须提供 comparisonLayout")
-        else:
-            for field in ["sourcePosition", "outputPosition", "ignoredElements"]:
-                if field not in layout:
-                    errors.append(f"comparisonLayout.{field} 缺失")
-            check_string_array(errors, "comparisonLayout.ignoredElements", layout.get("ignoredElements"), 80)
-
-    if quality == "unusable":
-        check_text(errors, "styleInstruction", data.get("styleInstruction"), 20, 4000)
-        check_text(errors, "contentExclusion", data.get("contentExclusion"), 20, 2000)
-    else:
-        check_style_instruction(errors, data.get("styleInstruction"))
-        check_text(errors, "contentExclusion", data.get("contentExclusion"), 60, 2000)
-        if "参考内容禁迁移清单：" not in str(data.get("contentExclusion", "")):
-            errors.append("contentExclusion 必须包含“参考内容禁迁移清单：”")
-    confidence = data.get("classificationConfidence")
-    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-        errors.append("classificationConfidence 必须在 0-1 之间")
-    if not isinstance(data.get("needsReview"), bool):
-        errors.append("needsReview 必须是 boolean")
-
-    style_evaluation = data.get("styleEvaluation")
-    if style_evaluation is not None:
-        check_style_evaluation(errors, style_evaluation)
-    if data.get("needsReview") is False:
-        if style_evaluation is None:
-            errors.append("needsReview=false 必须提供 styleEvaluation")
-        elif isinstance(style_evaluation, dict):
-            evaluation_score = style_evaluation.get("score")
-            if (
-                isinstance(evaluation_score, bool)
-                or not isinstance(evaluation_score, (int, float))
-                or evaluation_score < 90
-            ):
-                errors.append("needsReview=false 要求 styleEvaluation.score >= 90")
-            if style_evaluation.get("verdict") != "pass":
-                errors.append("needsReview=false 要求 styleEvaluation.verdict=pass")
-            if style_evaluation.get("hardFailures"):
-                errors.append("needsReview=false 要求 styleEvaluation.hardFailures 为空")
-
-    test_assets = data.get("testAssets")
-    if test_assets is not None:
-        if not isinstance(test_assets, dict):
-            errors.append("testAssets 必须是 object")
-        elif asset_mode != "remote":
-            for name, value in test_assets.items():
-                check_asset(
-                    errors,
-                    template_file,
-                    f"testAssets.{name}",
-                    value,
-                    "local",
-                    domain,
-                    prefix,
-                )
-    if data.get("needsReview") is False and asset_mode != "remote":
-        if not isinstance(test_assets, dict) or not {"input", "output"}.issubset(test_assets):
-            errors.append("本地 needsReview=false 模板必须提供 testAssets.input 与 testAssets.output")
-    if asset_mode == "remote" and any(field in data for field in ["testAssets", "testNotes", "reviewNotes"]):
-        errors.append("handoff JSON 不得包含 testAssets、testNotes 或 reviewNotes")
+    check_prompt(errors, data.get("promptTemplate"))
+    check_input_schema(errors, data.get("inputSchema"))
+    if data.get("preprocessSteps") != []:
+        errors.append("preprocessSteps 当前必须为空数组")
+    check_metadata(errors, data.get("metadata"), key)
     return errors
 
 

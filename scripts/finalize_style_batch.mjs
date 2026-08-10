@@ -18,7 +18,7 @@ const MIME = new Map([
 ]);
 const KEY_RE = /^[a-z][a-z0-9-]{1,59}$/;
 const OSS_OBJECT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:png|jpe?g|webp|gif|avif)$/i;
-const LOCAL_ONLY_FIELDS = ["testAssets", "testNotes", "reviewNotes"];
+const ASSET_FIELDS = ["cover", "referenceImage"];
 
 function fail(message) {
   throw new Error(message);
@@ -193,13 +193,14 @@ async function readTemplates(files, validateFile, mode, config) {
     if (!KEY_RE.test(data.key ?? "")) fail(`模板 key 非法：${file}`);
     if (keys.has(data.key)) fail(`批次内模板 key 重复：${data.key}`);
     keys.add(data.key);
-    for (const [name, value] of Object.entries(data.referenceAssets ?? {})) {
+    for (const name of ASSET_FIELDS) {
+      const value = data[name];
       if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
         if (!config.domain || !isManagedRemoteUrl(value, config)) {
-          fail(`referenceAssets.${name} 不是当前 assets 域名的受控 URL：${file}`);
+          fail(`${name} 不是当前 assets 域名的受控 URL：${file}`);
         }
       } else {
-        const local = resolveLocalAsset(file, `referenceAssets.${name}`, value);
+        const local = resolveLocalAsset(file, name, value);
         if (!await exists(local.resolved)) fail(`本地图片不存在：${local.resolved}`);
       }
     }
@@ -216,8 +217,9 @@ export async function preflightStyleBatch(options) {
   const digests = new Set();
   let localAssets = 0;
   for (const template of templates) {
-    for (const [name, value] of Object.entries(template.data.referenceAssets)) {
-      const local = resolveLocalAsset(template.file, `referenceAssets.${name}`, value);
+    for (const name of ASSET_FIELDS) {
+      const value = template.data[name];
+      const local = resolveLocalAsset(template.file, name, value);
       if (!local) continue;
       localAssets += 1;
       digests.add(await sha256(await readFile(local.resolved)));
@@ -281,19 +283,19 @@ export async function finalizeStyleBatch(options) {
 
   for (const template of templates) {
     const finalData = structuredClone(template.data);
-    for (const field of LOCAL_ONLY_FIELDS) delete finalData[field];
-    for (const [name, value] of Object.entries(finalData.referenceAssets)) {
+    for (const name of ASSET_FIELDS) {
+      const value = finalData[name];
       if (isManagedRemoteUrl(value, config)) {
         reused += 1;
         continue;
       }
-      const local = resolveLocalAsset(template.file, `referenceAssets.${name}`, value);
-      if (!local) fail(`referenceAssets.${name} 不是可上传的本地路径：${template.file}`);
+      const local = resolveLocalAsset(template.file, name, value);
+      if (!local) fail(`${name} 不是可上传的本地路径：${template.file}`);
       const body = await readFile(local.resolved);
       const digest = await sha256(body);
       const cached = state.uploads[digest];
       if (cached?.url && isManagedRemoteUrl(cached.url, config)) {
-        finalData.referenceAssets[name] = cached.url;
+        finalData[name] = cached.url;
         reused += 1;
         continue;
       }
@@ -308,7 +310,7 @@ export async function finalizeStyleBatch(options) {
         uploadedAt: new Date().toISOString(),
       };
       await atomicJson(stateFile, state);
-      finalData.referenceAssets[name] = url;
+      finalData[name] = url;
       uploaded += 1;
       await progress({ phase: "uploading", currentTemplate: finalData.key, currentAsset: name });
     }

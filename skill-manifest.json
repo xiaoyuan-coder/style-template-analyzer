@@ -1,22 +1,26 @@
 {
   "name": "style-template-analyzer",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "source": "repo",
   "runtime_copy_hint": "$env:USERPROFILE\\.codex\\skills\\style-template-analyzer",
-  "updated_at": "2026-08-05",
-  "notes": "New style templates temporarily omit duplicate tags and styleTags fields; legacy inputs remain accepted. Core reference-content separation, full non-photographic rerendering, and 90-point fidelity gates remain.",
+  "updated_at": "2026-08-10",
+  "notes": "Runtime output now follows the engineering STYLE_REF contract. Deep seven-dimension analysis and independent multi-case evaluation live in separate artifacts; prompt compilation uses 3-5 discriminative features and strict image-role boundaries.",
   "tracked_files": [
     "SKILL.md",
     "skill-manifest.json",
     "agents/openai.yaml",
     "references/style-template-contract.md",
     "references/style-analysis-and-prompting.md",
+    "references/style-analysis.schema.json",
+    "references/style-evaluation.schema.json",
     "references/style-template-import.schema.json",
     "references/style-template-import.sample.json",
     "references/oss-handoff.md",
     "scripts/validate_style_template.py",
+    "scripts/validate_style_evaluation.py",
     "scripts/finalize_style_batch.mjs",
     "scripts/test_finalize_style_batch.mjs",
-    "scripts/test_validate_style_template.py"
+    "scripts/test_validate_style_template.py",
+    "scripts/test_validate_style_evaluation.py"
   ]
 }
