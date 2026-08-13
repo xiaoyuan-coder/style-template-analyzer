@@ -1,4 +1,4 @@
 interface:
-  display_name: "风格化模板分析器"
-  short_description: "提取纯画风，生成研发可入库 STYLE_REF 模板并做跨内容严格验收"
-  default_prompt: "使用 $style-template-analyzer 分析参考图，输出内部风格分析和研发可直接入库的 STYLE_REF JSON；用户图独占内容，参考图只提供风格，并用至少四个跨内容案例验证 90 分还原门槛。"
+  display_name: "整图视觉重构模板分析器"
+  short_description: "分析风格、形态与结构，生成单图重构模板"
+  default_prompt: "使用 $style-template-analyzer 把参考素材编译为 prompt-only 整图视觉重构模板，明确原主体逐一对应、主体特征连续性、授权变换、固定结构与 90 分验收门槛。"

@@ -1,34 +1,111 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://memebuy.local/schemas/style-analysis.schema.json",
-  "title": "StyleReferenceAnalysis",
+  "title": "WholeImageVisualReconstructionAnalysis",
   "type": "object",
   "required": [
     "schemaVersion",
     "templateKey",
     "referenceAsset",
     "referenceType",
+    "extractionMode",
     "referenceContentInventory",
-    "styleFingerprint",
-    "discriminativeFeatures",
+    "transformationContract",
+    "renderingFingerprint",
+    "signatureMechanisms",
     "referenceContentBlocklist",
     "classificationConfidence",
     "qualityStatus"
   ],
   "properties": {
-    "schemaVersion": {"const": "1.0"},
+    "schemaVersion": {"const": "2.0"},
     "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
     "referenceAsset": {"type": "string", "minLength": 1, "maxLength": 1000},
     "referenceType": {
       "enum": ["single-style-reference", "paired-images", "paired-comparison", "annotated-paired-comparison"]
     },
+    "extractionMode": {
+      "enum": ["direct-reconstruction", "paired-difference", "hybrid-operator-salvage", "low-information-salvage"]
+    },
     "referenceContentInventory": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 100,
       "items": {"type": "string", "minLength": 1, "maxLength": 120},
       "uniqueItems": true
     },
-    "styleFingerprint": {
+    "transformationContract": {
+      "type": "object",
+      "required": [
+        "families",
+        "subjectSelection",
+        "subjectForm",
+        "poseAndView",
+        "instanceMode",
+        "environmentMode",
+        "compositionMode",
+        "contentInvariants",
+        "templateConstants",
+        "allowedDerivations",
+        "textPolicy",
+        "framePolicy",
+        "renderingTarget"
+      ],
+      "properties": {
+        "families": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "enum": ["drawing-style", "material-craft", "subject-form", "visual-system", "information-expression", "composition-structure"]
+          },
+          "uniqueItems": true
+        },
+        "subjectSelection": {"enum": ["all-salient", "primary-subject"]},
+        "subjectForm": {"enum": ["preserve", "transform"]},
+        "poseAndView": {"enum": ["preserve", "derive"]},
+        "instanceMode": {"enum": ["preserve", "repeat-or-split"]},
+        "environmentMode": {"enum": ["preserve", "simplify", "remove", "replace", "rebuild"]},
+        "compositionMode": {"enum": ["preserve", "reorganize"]},
+        "contentInvariants": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "enum": ["subject-set", "subject-features", "associated-objects", "key-relationships", "source-frame"]
+          },
+          "uniqueItems": true
+        },
+        "templateConstants": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {"type": "string", "minLength": 2, "maxLength": 160},
+          "uniqueItems": true
+        },
+        "allowedDerivations": {
+          "type": "array",
+          "maxItems": 7,
+          "items": {
+            "enum": ["local-enlargement", "feature-statistics", "subject-repetition", "new-viewpoint", "new-action", "environment-reconstruction", "composition-reorganization"]
+          },
+          "uniqueItems": true
+        },
+        "textPolicy": {
+          "type": "object",
+          "required": ["subjectText", "environmentText", "templateText"],
+          "properties": {
+            "subjectText": {"const": "preserve-when-legible"},
+            "environmentText": {"enum": ["preserve", "remove-with-environment"]},
+            "templateText": {"enum": ["none", "template-specific"]}
+          },
+          "additionalProperties": false
+        },
+        "framePolicy": {"const": "inherit-source-aspect-ratio"},
+        "renderingTarget": {"const": "full-non-photographic-redraw"}
+      },
+      "additionalProperties": false
+    },
+    "renderingFingerprint": {
       "type": "object",
       "required": ["imagingMedium", "shapeAndDetail", "linesAndEdges", "marksAndTexture", "colorOrganization", "toneAndSpace", "globalCoverage"],
       "properties": {
@@ -42,17 +119,19 @@
       },
       "additionalProperties": false
     },
-    "discriminativeFeatures": {
+    "signatureMechanisms": {
       "type": "array",
       "minItems": 3,
-      "maxItems": 5,
+      "maxItems": 6,
       "items": {
         "type": "object",
-        "required": ["dimension", "feature", "evidence"],
+        "required": ["family", "mechanism", "evidence"],
         "properties": {
-          "dimension": {"enum": ["imagingMedium", "shapeAndDetail", "linesAndEdges", "marksAndTexture", "colorOrganization", "toneAndSpace", "globalCoverage"]},
-          "feature": {"type": "string", "minLength": 3, "maxLength": 160},
-          "evidence": {"type": "string", "minLength": 3, "maxLength": 240}
+          "family": {
+            "enum": ["drawing-style", "material-craft", "subject-form", "visual-system", "information-expression", "composition-structure", "rendering"]
+          },
+          "mechanism": {"type": "string", "minLength": 3, "maxLength": 200},
+          "evidence": {"type": "string", "minLength": 3, "maxLength": 300}
         },
         "additionalProperties": false
       }
@@ -60,15 +139,49 @@
     "referenceContentBlocklist": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 100,
       "items": {"type": "string", "minLength": 1, "maxLength": 120},
       "uniqueItems": true
     },
     "classificationConfidence": {"type": "number", "minimum": 0, "maximum": 1},
-    "qualityStatus": {"enum": ["usable", "unusable"]},
+    "qualityStatus": {"enum": ["usable", "salvaged", "unusable"]},
+    "salvagePlan": {
+      "type": "object",
+      "required": ["sourceDependency", "observedOperators", "nonPhotographicCarrier", "coverageExpansion", "uncertainty"],
+      "properties": {
+        "sourceDependency": {
+          "enum": ["partial-photographic", "dominant-photographic", "overlay-dependent", "layout-dependent", "near-empty"]
+        },
+        "observedOperators": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {"type": "string", "minLength": 3, "maxLength": 240},
+          "uniqueItems": true
+        },
+        "nonPhotographicCarrier": {"type": "string", "minLength": 5, "maxLength": 500},
+        "coverageExpansion": {"type": "string", "minLength": 5, "maxLength": 500},
+        "uncertainty": {"type": "string", "minLength": 5, "maxLength": 500}
+      },
+      "additionalProperties": false
+    },
     "reviewNotes": {
       "type": "array",
       "items": {"type": "string", "minLength": 1, "maxLength": 500}
     }
   },
+  "allOf": [
+    {
+      "if": {"properties": {"qualityStatus": {"const": "salvaged"}}, "required": ["qualityStatus"]},
+      "then": {
+        "required": ["salvagePlan"],
+        "properties": {"extractionMode": {"enum": ["hybrid-operator-salvage", "low-information-salvage"]}}
+      }
+    },
+    {
+      "if": {"properties": {"qualityStatus": {"enum": ["usable", "unusable"]}}, "required": ["qualityStatus"]},
+      "then": {"not": {"required": ["salvagePlan"]}}
+    }
+  ],
   "additionalProperties": false
 }

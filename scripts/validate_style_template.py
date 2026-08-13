@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate local or OSS-ready STYLE_REF runtime JSON without dependencies."""
+"""Validate prompt-only whole-image visual reconstruction runtime JSON."""
 
 from __future__ import annotations
 
@@ -39,8 +39,39 @@ INPUT_FIELDS = {"type", "id", "label", "hint", "required", "maxCount", "private"
 METADATA_FIELDS = {"tags", "styleAnalysis", "sourceRef"}
 SOURCE_REF_FIELDS = {"producerKey", "styleAsset", "taxonomyVersion"}
 STYLE_ANALYSIS_FIELDS = {"surfaceTexture", "composition", "backgroundPolicy", "note"}
-CONTENT_IMAGE_MARKERS = ("第 2 张图片", "第2张图片", "第 2 张图", "第2张图")
-STYLE_IMAGE_MARKERS = ("第 1 张图片", "第1张图片", "第 1 张图", "第1张图")
+SOURCE_IMAGE_MARKERS = ("用户上传图", "用户原图")
+SINGLE_IMAGE_MARKERS = ("唯一图片输入", "唯一输入图片", "唯一图像输入", "只使用用户上传图这一张图片")
+FRAME_DIRECTION_MARKERS = ("画幅方向", "横竖方向", "画布方向")
+ASPECT_RATIO_MARKERS = ("宽高比", "纵横比")
+FRAME_INHERITANCE_MARKERS = ("跟随", "保持", "继承", "沿用")
+SUBJECT_SCOPE_MARKERS = ("全部显著主体", "默认保留显著主体", "主主体")
+SUBJECT_FEATURE_MARKERS = ("发型", "服装", "配饰", "手持物")
+SUBJECT_CORRESPONDENCE_MARKERS = ("逐一对应", "一一对应")
+INSTANCE_CONTROL_MARKERS = ("不复制", "不合并", "不删减", "不增殖")
+TRANSFORMATION_PERMISSION_MARKERS = ("本模板允许", "本模板仅改变", "本模板保留")
+CONTENT_BOUNDARY_MARKERS = ("模板未授权", "越权新增")
+REFERENCE_DEPENDENCY_TERMS = (
+    "第 1 张图片",
+    "第1张图片",
+    "第 1 张图",
+    "第1张图",
+    "第 2 张图片",
+    "第2张图片",
+    "第 2 张图",
+    "第2张图",
+    "参考图",
+    "风格参考",
+)
+PHOTOGRAPHIC_BASE_TERMS = (
+    "保留原照片",
+    "保留照片作为底图",
+    "以原照片为底",
+    "以照片为底图",
+    "保留摄影底图",
+    "保留摄影轮廓",
+    "在原照片上叠加",
+    "照片叠加",
+)
 
 
 def normalize_prefix(value: str) -> str:
@@ -125,20 +156,40 @@ def check_prompt(errors: list[str], value: Any) -> None:
     if not isinstance(value, str):
         return
     checks = [
-        (any(marker in value for marker in CONTENT_IMAGE_MARKERS) and "唯一内容来源" in value,
-         "用户图内容权限：第 2 张图片是唯一内容来源"),
-        (any(marker in value for marker in STYLE_IMAGE_MARKERS) and "风格参考" in value,
-         "风格图权限：第 1 张图片仅作为风格参考"),
+        (any(marker in value for marker in SOURCE_IMAGE_MARKERS)
+         and any(marker in value for marker in SINGLE_IMAGE_MARKERS)
+         and "唯一内容来源" in value,
+         "prompt-only 输入权限：用户上传图是唯一图片输入和唯一内容来源"),
         (any(marker in value for marker in ("完整重绘", "完整重建", "全部重绘")),
          "全像素重绘要求"),
-        (any(marker in value for marker in ("严禁复制", "禁止复制", "禁止带入", "不得复制")),
-         "参考内容禁迁移要求"),
+        (any(marker in value for marker in SUBJECT_SCOPE_MARKERS),
+         "主体选择要求：全部显著主体或主主体"),
+        ("身份" in value and "关键关系" in value and all(marker in value for marker in SUBJECT_FEATURE_MARKERS),
+         "主体特征连续性：身份、发型、服装、配饰、手持物和关键关系"),
+        (any(marker in value for marker in SUBJECT_CORRESPONDENCE_MARKERS)
+         and all(marker in value for marker in INSTANCE_CONTROL_MARKERS),
+         "主体逐一对应与实例控制：不复制、不合并、不删减、不增殖"),
+        (any(marker in value for marker in TRANSFORMATION_PERMISSION_MARKERS),
+         "变换权限声明：本模板允许、仅改变或保留的内容"),
+        (all(marker in value for marker in CONTENT_BOUNDARY_MARKERS),
+         "越权内容边界：模板未授权内容属于越权新增"),
         ("原照片像素" in value and "消失" in value,
          "去摄影化要求：原照片像素必须消失"),
+        (any(marker in value for marker in SOURCE_IMAGE_MARKERS)
+         and any(marker in value for marker in FRAME_DIRECTION_MARKERS)
+         and any(marker in value for marker in ASPECT_RATIO_MARKERS)
+         and any(marker in value for marker in FRAME_INHERITANCE_MARKERS),
+         "画幅继承要求：输出方向与宽高比跟随用户上传图"),
     ]
     for valid, label in checks:
         if not valid:
             errors.append(f"promptTemplate 缺少{label}")
+    matched = [term for term in PHOTOGRAPHIC_BASE_TERMS if term in value]
+    if matched:
+        errors.append(f"promptTemplate 禁止保留摄影底图：{', '.join(matched)}")
+    dependencies = [term for term in REFERENCE_DEPENDENCY_TERMS if term in value]
+    if dependencies:
+        errors.append(f"promptTemplate 必须为单图 prompt-only，禁止参考图依赖：{', '.join(dependencies)}")
 
 
 def check_input_schema(errors: list[str], value: Any) -> None:

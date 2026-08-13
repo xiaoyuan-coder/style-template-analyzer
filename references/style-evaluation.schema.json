@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://memebuy.local/schemas/style-evaluation.schema.json",
-  "title": "StyleTemplateEvaluation",
+  "title": "VisualReconstructionTemplateEvaluation",
   "type": "object",
   "required": ["schemaVersion", "templateKey", "testProtocol", "cases", "aggregate"],
   "properties": {
-    "schemaVersion": {"const": "1.0"},
+    "schemaVersion": {"const": "2.0"},
     "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
     "testProtocol": {
       "type": "object",
@@ -28,22 +28,28 @@
           "output": {"type": "string", "minLength": 1, "maxLength": 1000},
           "score": {"type": "number", "minimum": 0, "maximum": 100},
           "verdict": {"enum": ["pass", "fail"]},
-          "hardFailures": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}},
+          "hardFailures": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 160}},
           "dimensionScores": {
             "type": "object",
-            "required": ["imagingMedium", "marksAndTexture", "colorOrganization", "linesAndEdges", "shapeAndDetail", "toneAndSpace", "globalCoverage"],
+            "required": [
+              "signatureMechanismFidelity",
+              "subjectFeatureContinuity",
+              "contentAndRelations",
+              "authorizedStructureAndDerivation",
+              "nonPhotographicCoverage",
+              "frameAndComposition"
+            ],
             "properties": {
-              "imagingMedium": {"type": "number", "minimum": 0, "maximum": 20},
-              "marksAndTexture": {"type": "number", "minimum": 0, "maximum": 20},
-              "colorOrganization": {"type": "number", "minimum": 0, "maximum": 15},
-              "linesAndEdges": {"type": "number", "minimum": 0, "maximum": 15},
-              "shapeAndDetail": {"type": "number", "minimum": 0, "maximum": 10},
-              "toneAndSpace": {"type": "number", "minimum": 0, "maximum": 10},
-              "globalCoverage": {"type": "number", "minimum": 0, "maximum": 10}
+              "signatureMechanismFidelity": {"type": "number", "minimum": 0, "maximum": 30},
+              "subjectFeatureContinuity": {"type": "number", "minimum": 0, "maximum": 20},
+              "contentAndRelations": {"type": "number", "minimum": 0, "maximum": 15},
+              "authorizedStructureAndDerivation": {"type": "number", "minimum": 0, "maximum": 15},
+              "nonPhotographicCoverage": {"type": "number", "minimum": 0, "maximum": 10},
+              "frameAndComposition": {"type": "number", "minimum": 0, "maximum": 10}
             },
             "additionalProperties": false
           },
-          "evidence": {"type": "string", "minLength": 20, "maxLength": 1000}
+          "evidence": {"type": "string", "minLength": 20, "maxLength": 1200}
         },
         "additionalProperties": false
       }
@@ -54,7 +60,7 @@
       "properties": {
         "score": {"type": "number", "minimum": 0, "maximum": 100},
         "verdict": {"enum": ["pass", "fail"]},
-        "evidence": {"type": "string", "minLength": 20, "maxLength": 1000}
+        "evidence": {"type": "string", "minLength": 20, "maxLength": 1200}
       },
       "additionalProperties": false
     }

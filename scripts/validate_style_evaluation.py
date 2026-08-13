@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate independent multi-case style fidelity evaluations."""
+"""Validate independent multi-case visual reconstruction evaluations."""
 
 from __future__ import annotations
 
@@ -15,13 +15,12 @@ from urllib.parse import urlparse
 KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"}
 DIMENSION_LIMITS = {
-    "imagingMedium": 20,
-    "marksAndTexture": 20,
-    "colorOrganization": 15,
-    "linesAndEdges": 15,
-    "shapeAndDetail": 10,
-    "toneAndSpace": 10,
-    "globalCoverage": 10,
+    "signatureMechanismFidelity": 30,
+    "subjectFeatureContinuity": 20,
+    "contentAndRelations": 15,
+    "authorizedStructureAndDerivation": 15,
+    "nonPhotographicCoverage": 10,
+    "frameAndComposition": 10,
 }
 PASSING_FLOORS = {field: maximum * 0.8 for field, maximum in DIMENSION_LIMITS.items()}
 
@@ -58,7 +57,7 @@ def check_case(errors: list[str], case: Any, index: int, evaluation_file: Path) 
     check_text(errors, f"{path}.id", case.get("id"), 1, 80)
     check_asset(errors, evaluation_file, f"{path}.input", case.get("input"))
     check_asset(errors, evaluation_file, f"{path}.output", case.get("output"))
-    check_text(errors, f"{path}.evidence", case.get("evidence"), 20, 1000)
+    check_text(errors, f"{path}.evidence", case.get("evidence"), 20, 1200)
 
     score = case.get("score")
     if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 100:
@@ -76,7 +75,7 @@ def check_case(errors: list[str], case: Any, index: int, evaluation_file: Path) 
     valid_dimensions = isinstance(dimensions, dict) and set(dimensions) == set(DIMENSION_LIMITS)
     total = 0.0
     if not valid_dimensions:
-        errors.append(f"{path}.dimensionScores 必须且只能包含七个评分维度")
+        errors.append(f"{path}.dimensionScores 必须且只能包含六个评分维度")
     else:
         for field, maximum in DIMENSION_LIMITS.items():
             value = dimensions.get(field)
@@ -86,7 +85,7 @@ def check_case(errors: list[str], case: Any, index: int, evaluation_file: Path) 
             else:
                 total += float(value)
         if score is not None and valid_dimensions and abs(float(score) - total) > 0.001:
-            errors.append(f"{path}.score 必须等于七个维度分数之和")
+            errors.append(f"{path}.score 必须等于六个维度分数之和")
 
     if hard_failures:
         if score != 0 or verdict != "fail":
@@ -111,8 +110,8 @@ def validate_data(data: Any, evaluation_file: Path) -> list[str]:
     required = {"schemaVersion", "templateKey", "testProtocol", "cases", "aggregate"}
     for field in sorted(required - set(data)):
         errors.append(f"{field} 缺失")
-    if data.get("schemaVersion") != "1.0":
-        errors.append("schemaVersion 必须为 1.0")
+    if data.get("schemaVersion") != "2.0":
+        errors.append("schemaVersion 必须为 2.0")
     if not isinstance(data.get("templateKey"), str) or not KEY_RE.fullmatch(data.get("templateKey", "")):
         errors.append("templateKey 格式不合法")
 
@@ -152,7 +151,7 @@ def validate_data(data: Any, evaluation_file: Path) -> list[str]:
         return errors
     aggregate_score = aggregate.get("score")
     aggregate_verdict = aggregate.get("verdict")
-    check_text(errors, "aggregate.evidence", aggregate.get("evidence"), 20, 1000)
+    check_text(errors, "aggregate.evidence", aggregate.get("evidence"), 20, 1200)
     if isinstance(aggregate_score, bool) or not isinstance(aggregate_score, (int, float)) or not 0 <= aggregate_score <= 100:
         errors.append("aggregate.score 必须在 0-100 之间")
     elif scores:

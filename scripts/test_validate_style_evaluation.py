@@ -16,13 +16,12 @@ SPEC.loader.exec_module(MODULE)
 
 
 PASSING_DIMENSIONS = {
-    "imagingMedium": 19,
-    "marksAndTexture": 18,
-    "colorOrganization": 14,
-    "linesAndEdges": 14,
-    "shapeAndDetail": 9,
-    "toneAndSpace": 8,
-    "globalCoverage": 9,
+    "signatureMechanismFidelity": 28,
+    "subjectFeatureContinuity": 19,
+    "contentAndRelations": 14,
+    "authorizedStructureAndDerivation": 14,
+    "nonPhotographicCoverage": 8,
+    "frameAndComposition": 8,
 }
 
 
@@ -42,11 +41,11 @@ def evaluation(root: Path, case_count: int = 4) -> dict:
                 "verdict": "pass",
                 "hardFailures": [],
                 "dimensionScores": dict(PASSING_DIMENSIONS),
-                "evidence": "目标媒介、核心纹理、配色、线条与形体均接近参考图，输入内容保持稳定。",
+                "evidence": "标志性变换机制稳定，主体特征、服饰配件、内容关系和画幅比例均符合契约。",
             }
         )
     return {
-        "schemaVersion": "1.0",
+        "schemaVersion": "2.0",
         "templateKey": "high-gloss-chrome-rendering",
         "testProtocol": {
             "candidateCountPerInput": 4,
@@ -56,7 +55,7 @@ def evaluation(root: Path, case_count: int = 4) -> dict:
         "aggregate": {
             "score": 91,
             "verdict": "pass",
-            "evidence": "四个跨内容案例全部达到九十分，关键风格维度均超过各自最低线。",
+            "evidence": "四个跨内容案例全部达到九十分，标志性机制、主体连续性与其他维度均超过最低线。",
         },
     }
 
@@ -80,18 +79,17 @@ class EvaluationValidatorTests(unittest.TestCase):
             data = evaluation(root)
             case = data["cases"][0]
             case["dimensionScores"] = {
-                "imagingMedium": 20,
-                "marksAndTexture": 15,
-                "colorOrganization": 15,
-                "linesAndEdges": 15,
-                "shapeAndDetail": 10,
-                "toneAndSpace": 10,
-                "globalCoverage": 10,
+                "signatureMechanismFidelity": 30,
+                "subjectFeatureContinuity": 15,
+                "contentAndRelations": 15,
+                "authorizedStructureAndDerivation": 15,
+                "nonPhotographicCoverage": 10,
+                "frameAndComposition": 10,
             }
             case["score"] = 95
             data["aggregate"]["score"] = 92
             errors = MODULE.validate_data(data, root / "style-evaluation.json")
-            self.assertTrue(any("marksAndTexture" in error and "最低线" in error for error in errors))
+            self.assertTrue(any("subjectFeatureContinuity" in error and "最低线" in error for error in errors))
 
     def test_rejects_non_independent_pass(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
