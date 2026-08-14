@@ -39,7 +39,6 @@ def template(asset: str = "./style.png") -> dict:
         "description": "以高反射镜面、宽阔高光和圆润块面重绘你的图片",
         "kind": "STYLE_REF",
         "cover": asset,
-        "referenceImage": asset,
         "imageSize": "1024x1024",
         "imageN": 1,
         "promptTemplate": PROMPT,
@@ -66,6 +65,15 @@ def template(asset: str = "./style.png") -> dict:
 
 
 class ValidatorTests(unittest.TestCase):
+    def test_rejects_title_outside_three_to_six_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / "style-template.json"
+            for title in ("水彩", "水青双色阈值印刷"):
+                data = template()
+                data["title"] = title
+                errors = MODULE.validate_data(data, file, "local", "", "")
+                self.assertTrue(any("title" in error for error in errors))
+
     def test_valid_local_template(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -75,6 +83,16 @@ class ValidatorTests(unittest.TestCase):
             file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             self.assertEqual(MODULE.validate_data(data, file, "local", "", ""), [])
 
+    def test_rejects_removed_reference_image_field(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "style.png").write_bytes(b"image")
+            file = root / "style-template.json"
+            data = template()
+            data["referenceImage"] = "./style.png"
+            errors = MODULE.validate_data(data, file, "local", "", "")
+            self.assertTrue(any("referenceImage" in error for error in errors))
+
     def test_accepts_authorized_structured_reconstruction(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -82,6 +100,18 @@ class ValidatorTests(unittest.TestCase):
             file = root / "style-template.json"
             data = template()
             data["promptTemplate"] = STRUCTURED_PROMPT
+            self.assertEqual(MODULE.validate_data(data, file, "local", "", ""), [])
+
+    def test_accepts_equivalent_source_frame_inheritance_wording(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "style.png").write_bytes(b"image")
+            file = root / "style-template.json"
+            data = template()
+            data["promptTemplate"] = PROMPT.replace(
+                "输出画幅方向与宽高比跟随用户上传图。",
+                "输出画布严格保持用户上传图的相同方向与宽高比。",
+            )
             self.assertEqual(MODULE.validate_data(data, file, "local", "", ""), [])
 
     def test_accepts_managed_remote_assets(self) -> None:

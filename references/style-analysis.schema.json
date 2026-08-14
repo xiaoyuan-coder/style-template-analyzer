@@ -145,6 +145,21 @@
     },
     "classificationConfidence": {"type": "number", "minimum": 0, "maximum": 1},
     "qualityStatus": {"enum": ["usable", "salvaged", "unusable"]},
+    "garmentPrintClassification": {
+      "type": "object",
+      "required": ["userFacingCategory", "designProduct", "renderingMedium", "subjectTreatment", "visualSystem", "layoutStructure", "printReadiness", "deanalysisRequired"],
+      "properties": {
+        "userFacingCategory": {"enum": ["手绘", "版印", "漫画", "像素", "材质", "图形", "拼贴", "分镜", "界面"]},
+        "designProduct": {"enum": ["artwork", "emblem", "pattern", "panel-sequence", "interface-system", "analysis-board"]},
+        "renderingMedium": {"type": "string", "minLength": 2, "maxLength": 80},
+        "subjectTreatment": {"enum": ["preserve-form", "stylize-form", "transform-form"]},
+        "visualSystem": {"enum": ["none", "decorative-system", "interface-system", "analysis-system"]},
+        "layoutStructure": {"enum": ["single-scene", "cutout-subject", "badge-or-sticker", "repeat-pattern", "narrative-panels", "decorative-collage", "ui-windows", "annotated-callouts"]},
+        "printReadiness": {"enum": ["A", "B", "C", "D"]},
+        "deanalysisRequired": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
     "salvagePlan": {
       "type": "object",
       "required": ["sourceDependency", "observedOperators", "nonPhotographicCarrier", "coverageExpansion", "uncertainty"],

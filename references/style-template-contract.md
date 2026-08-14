@@ -25,8 +25,7 @@
 | `title` | 只表达技法和视觉结果 |
 | `description` | 用户可理解的成图效果 |
 | `kind` | 固定为 `STYLE_REF` |
-| `cover` | 本地参考图路径或受控 OSS URL |
-| `referenceImage` | 离线取证与研发兼容字段；通常与 `cover` 相同，运行时不传给模型 |
+| `cover` | 本地效果图路径或受控 OSS URL；只用于前端展示，运行时不传给模型 |
 | `imageSize` | `<宽>x<高>`，每边 256–4096；名义输出尺寸，不授予参考图画幅权限 |
 | `imageN` | 固定为 `1` |
 | `promptTemplate` | 实际生效的完整整图视觉重构提示词 |
@@ -65,13 +64,13 @@ testNotes styleEvaluation qualityStatus renderingMethod
 ]
 ```
 
-运行时只提交用户上传的 `source`。模型图片数组固定为 `[source]`，并配合 `promptTemplate` 执行单图整图重构。`cover`、`referenceImage`、`metadata.sourceRef.styleAsset` 和 `style-analysis.json` 均不进入生成请求。完整协议见 `prompt-only-runtime.md`。
+运行时只提交用户上传的 `source`。模型图片数组固定为 `[source]`，并配合 `promptTemplate` 执行单图整图重构。`cover`、`metadata.sourceRef.styleAsset` 和 `style-analysis.json` 均不进入生成请求。完整协议见 `prompt-only-runtime.md`。
 
 ### 画幅继承
 
 - 运行前读取用户上传图的宽、高、横竖方向和宽高比。
 - 输出保持用户上传图的横竖方向与宽高比；浮窗、边框、UI 或其他获准模板结构在该画幅内自适应排布。
-- `referenceImage` 的尺寸和比例只描述参考资源，`imageSize` 只提供名义像素预算，两者都不覆盖用户图画幅。
+- `cover` 的尺寸和比例只描述展示资源，`imageSize` 只提供名义像素预算，两者都不覆盖用户图画幅。
 - 生成服务只接受离散尺寸时，选择与用户图宽高比最接近且方向一致的尺寸，并记录比例偏差。
 - 真实生成调用不附加来自参考图、模板示例或人工测试习惯的固定比例指令。
 
@@ -80,6 +79,8 @@ testNotes styleEvaluation qualityStatus renderingMethod
 默认保留全部显著主体、主体集合、身份、面部与体型、轮廓、发型、花纹配色、服装、配饰、手持物、主体关联物和关键关系。全部显著主体逐一对应用户图中的原主体；`instanceMode: preserve` 要求基础实例数量一一对应，人物、动物、物体及关联物不复制、不合并、不删减、不增殖。`instanceMode: repeat-or-split` 只授权可追溯的重复、分格、局部放大或多视角派生，派生实例仍归属于原主体，不能形成新的独立主体。主主体提取、形态变换、新动作/视角、重复呈现、环境重构和构图重组需要在 `transformationContract` 中授权，并写入运行提示词。
 
 参考图中的案例人物、动物、商品、动作、场景、故事、品牌和未授权装饰进入 `referenceContentBlocklist`。可跨输入复用的 UI、容器、边框、图表、局部放大框或其他结构可以进入 `templateConstants`。两个集合互斥，参考案例物象名称不写入运行提示词。
+
+固定结构还要通过服装印制适配判断。普通模板只授权有审美作用的边框、分格、拼贴或界面；连接线、定位点、分析框、刻度、图例、编号、仪表和说明性局部放大窗默认退出。用户明确要求图鉴、档案、分析或说明书效果时，才把这些组件列入 `templateConstants`。
 
 ## 5. 内部分析结构
 
@@ -92,6 +93,7 @@ testNotes styleEvaluation qualityStatus renderingMethod
 - 3–6 个 `signatureMechanisms` 及图像证据；
 - 参考内容禁迁移清单；
 - 分类置信度和素材可用性。
+- 新产物的 `garmentPrintClassification` 四轴分类；旧 2.0 档案可在迁移前暂缺该字段。
 
 摄影混合、拼版、覆盖层和低信息参考还要记录：
 
@@ -136,14 +138,15 @@ validator 要求 `promptTemplate` 同时包含：
 
 运行请求包含参考素材、显著主体丢失/替换、基础主体实例复制/合并/删减/增殖、派生实例形成新独立主体、主体特征漂移、未授权内容或案例物象泄漏、摄影介质残留、核心标志性机制完全缺失、输出横竖方向错误或宽高比明显偏离均为硬失败，案例记 0 分。契约已授权且保持原主体归属的姿态、视角、重复呈现、环境或构图变化不计为失败。
 
+普通服装图案还要通过 `garment-print-template-taxonomy.md` 的印制适配门。意外分析线和说明组件先判 `needs-prompt-revision`；它们压过主体或破坏图案完整性时按业务硬失败处理。
+
 ## 8. 本地与 handoff
 
 本地模板：
 
 ```json
 {
-  "cover": "./style-reference.png",
-  "referenceImage": "./style-reference.png"
+  "cover": "./effect.png"
 }
 ```
 
@@ -151,9 +154,8 @@ handoff 模板：
 
 ```json
 {
-  "cover": "https://assets.example.com/dev/style/templates/<uuid>.png",
-  "referenceImage": "https://assets.example.com/dev/style/templates/<uuid>.png"
+  "cover": "https://assets.example.com/dev/style/templates/<uuid>.png"
 }
 ```
 
-相同图片通过 SHA-256 只上传一次。handoff 目录只包含 `<key>.json`，不包含内部分析、验收记录、批次清单或上传状态。
+`cover` 通过 SHA-256 去重上传。handoff 目录只包含 `<key>.json`，不包含内部分析、验收记录、批次清单或上传状态。

@@ -29,7 +29,6 @@ function templateData(key = "high-gloss-chrome-rendering") {
     description: "以高反射镜面、宽阔高光和圆润块面重绘你的图片",
     kind: "STYLE_REF",
     cover: "./same.png",
-    referenceImage: "./same.png",
     imageSize: "1024x1024",
     imageN: 1,
     promptTemplate: PROMPT,
@@ -71,10 +70,9 @@ async function mockValidate(file, mode, config) {
   const data = JSON.parse(await readFile(file, "utf8"));
   if (mode === "remote") {
     assert.equal(isManagedRemoteUrl(data.cover, config), true);
-    assert.equal(isManagedRemoteUrl(data.referenceImage, config), true);
     assert.deepEqual(Object.keys(data).sort(), [
       "cover", "description", "imageN", "imageSize", "inputSchema", "key", "kind",
-      "metadata", "preprocessSteps", "promptTemplate", "referenceImage", "title",
+      "metadata", "preprocessSteps", "promptTemplate", "title",
     ].sort());
   }
 }
@@ -90,14 +88,14 @@ test("validates OSS configuration without exposing secrets", () => {
   }), /纯 hostname/);
 });
 
-test("dry-run reports duplicate cover and reference image bytes", async () => {
+test("dry-run reports the single cover asset", async () => {
   const value = await fixture();
   try {
     const summary = await preflightStyleBatch({ input: value.input });
     assert.equal(summary.templates, 1);
-    assert.equal(summary.localAssets, 2);
+    assert.equal(summary.localAssets, 1);
     assert.equal(summary.uniqueLocalAssets, 1);
-    assert.equal(summary.duplicateAssets, 1);
+    assert.equal(summary.duplicateAssets, 0);
   } finally {
     await rm(value.root, { recursive: true, force: true });
   }
@@ -118,11 +116,12 @@ test("uploads one asset and writes a clean STYLE_REF JSON", async () => {
     });
     assert.equal(summary.templates, 1);
     assert.equal(summary.uploaded, 1);
-    assert.equal(summary.reused, 1);
+    assert.equal(summary.reused, 0);
     assert.equal(uploads.length, 1);
     const finalFile = path.join(value.output, "high-gloss-chrome-rendering.json");
     const finalData = JSON.parse(await readFile(finalFile, "utf8"));
-    assert.equal(finalData.cover, finalData.referenceImage);
+    assert.equal(isManagedRemoteUrl(finalData.cover, CONFIG), true);
+    assert.equal("referenceImage" in finalData, false);
     assert.equal(await readFile(sourceFile, "utf8"), sourceBefore);
 
     const retryUploads = [];
@@ -135,7 +134,7 @@ test("uploads one asset and writes a clean STYLE_REF JSON", async () => {
     });
     assert.equal(retryUploads.length, 0);
     assert.equal(retry.uploaded, 0);
-    assert.equal(retry.reused, 2);
+    assert.equal(retry.reused, 1);
   } finally {
     await rm(value.root, { recursive: true, force: true });
   }

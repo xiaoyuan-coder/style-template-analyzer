@@ -80,6 +80,36 @@ def analysis() -> dict:
 
 
 class AnalysisValidatorTests(unittest.TestCase):
+    def test_accepts_print_ready_artwork_classification(self) -> None:
+        data = analysis()
+        data["garmentPrintClassification"] = {
+            "userFacingCategory": "版印",
+            "designProduct": "artwork",
+            "renderingMedium": "duotone-woodcut",
+            "subjectTreatment": "stylize-form",
+            "visualSystem": "none",
+            "layoutStructure": "single-scene",
+            "printReadiness": "A",
+            "deanalysisRequired": False,
+        }
+        self.assertEqual(MODULE.validate_data(data), [])
+
+    def test_rejects_unmarked_analysis_callouts(self) -> None:
+        data = analysis()
+        data["garmentPrintClassification"] = {
+            "userFacingCategory": "手绘",
+            "designProduct": "artwork",
+            "renderingMedium": "watercolor",
+            "subjectTreatment": "stylize-form",
+            "visualSystem": "analysis-system",
+            "layoutStructure": "annotated-callouts",
+            "printReadiness": "C",
+            "deanalysisRequired": False,
+        }
+        errors = MODULE.validate_data(data)
+        self.assertTrue(any("analysis-board" in error for error in errors))
+        self.assertTrue(any("deanalysisRequired=true" in error for error in errors))
+
     def test_accepts_complete_salvaged_analysis(self) -> None:
         self.assertEqual(MODULE.validate_data(analysis()), [])
 

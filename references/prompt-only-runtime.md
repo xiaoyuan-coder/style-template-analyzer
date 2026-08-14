@@ -7,11 +7,11 @@
 1. `inputSchema` 中 `id: source` 的用户上传图；
 2. 已编译的 `promptTemplate`。
 
-模型图片数组固定为 `[source]`。`cover`、`referenceImage`、`metadata.sourceRef.styleAsset`、分析素材和 good case 均不进入图片数组。
+模型图片数组固定为 `[source]`。`cover`、`metadata.sourceRef.styleAsset`、分析素材和 good case 均不进入图片数组。
 
-## 兼容字段
+## 展示字段
 
-当前研发 Schema 仍要求 `kind: STYLE_REF` 和 `referenceImage`。保留它们用于分类、封面、OSS 上传和离线追溯；`STYLE_REF` 不限制模板只执行绘制风格迁移。
+当前研发 Schema 保留 `kind: STYLE_REF` 作为兼容分类，并使用 `cover` 提供前端封面或效果图。运行模板不保存 `referenceImage`；离线参考素材、分析证据和测试效果通过分析档案、评测记录与生产目录追溯。`STYLE_REF` 不限制模板只执行绘制风格迁移。
 
 ## 提示词角色
 
@@ -42,7 +42,7 @@
 
 ## 验收硬失败
 
-- 运行请求包含 `referenceImage` 或其他离线参考；
+- 运行请求包含 `cover` 或其他离线参考素材；
 - 显著主体丢失、身份替换、基础主体实例复制/合并/删减/增殖，或派生实例形成新独立主体；
 - 主体特征漂移，包含发型、服装、配饰或手持物丢失或串用；
 - 参考案例物象或其他越权内容出现；

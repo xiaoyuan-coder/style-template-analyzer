@@ -18,7 +18,7 @@ const MIME = new Map([
 ]);
 const KEY_RE = /^[a-z][a-z0-9-]{1,59}$/;
 const OSS_OBJECT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:png|jpe?g|webp|gif|avif)$/i;
-const ASSET_FIELDS = ["cover", "referenceImage"];
+const ASSET_FIELDS = ["cover"];
 
 function fail(message) {
   throw new Error(message);
@@ -144,6 +144,7 @@ async function createDefaultUploader(config) {
     bucket: config.bucket,
     endpoint: `https://${config.endpoint}`,
     secure: true,
+    timeout: 300000,
   });
   return async ({ key, body, contentType }) => {
     const result = await client.put(key, body, { headers: { "Content-Type": contentType } });

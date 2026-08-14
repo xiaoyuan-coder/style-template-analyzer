@@ -26,7 +26,7 @@ REQUIRED_FIELDS = {
     "classificationConfidence",
     "qualityStatus",
 }
-ALLOWED_FIELDS = REQUIRED_FIELDS | {"salvagePlan", "reviewNotes"}
+ALLOWED_FIELDS = REQUIRED_FIELDS | {"salvagePlan", "reviewNotes", "garmentPrintClassification"}
 REFERENCE_TYPES = {
     "single-style-reference",
     "paired-images",
@@ -105,6 +105,25 @@ SOURCE_DEPENDENCIES = {
     "layout-dependent",
     "near-empty",
 }
+GARMENT_CLASSIFICATION_FIELDS = {
+    "userFacingCategory",
+    "designProduct",
+    "renderingMedium",
+    "subjectTreatment",
+    "visualSystem",
+    "layoutStructure",
+    "printReadiness",
+    "deanalysisRequired",
+}
+USER_FACING_CATEGORIES = {"手绘", "版印", "漫画", "像素", "材质", "图形", "拼贴", "分镜", "界面"}
+DESIGN_PRODUCTS = {"artwork", "emblem", "pattern", "panel-sequence", "interface-system", "analysis-board"}
+SUBJECT_TREATMENTS = {"preserve-form", "stylize-form", "transform-form"}
+VISUAL_SYSTEMS = {"none", "decorative-system", "interface-system", "analysis-system"}
+LAYOUT_STRUCTURES = {
+    "single-scene", "cutout-subject", "badge-or-sticker", "repeat-pattern",
+    "narrative-panels", "decorative-collage", "ui-windows", "annotated-callouts",
+}
+PRINT_READINESS_LEVELS = {"A", "B", "C", "D"}
 
 
 def check_text(errors: list[str], path: str, value: Any, minimum: int, maximum: int) -> None:
@@ -252,6 +271,38 @@ def check_salvage(errors: list[str], data: dict[str, Any]) -> None:
     check_text(errors, "salvagePlan.uncertainty", plan.get("uncertainty"), 5, 500)
 
 
+def check_garment_print_classification(errors: list[str], value: Any) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict) or set(value) != GARMENT_CLASSIFICATION_FIELDS:
+        errors.append("garmentPrintClassification 必须且只能包含八个分类字段")
+        return
+    if value.get("userFacingCategory") not in USER_FACING_CATEGORIES:
+        errors.append("garmentPrintClassification.userFacingCategory 不合法")
+    if value.get("designProduct") not in DESIGN_PRODUCTS:
+        errors.append("garmentPrintClassification.designProduct 不合法")
+    check_text(errors, "garmentPrintClassification.renderingMedium", value.get("renderingMedium"), 2, 80)
+    if value.get("subjectTreatment") not in SUBJECT_TREATMENTS:
+        errors.append("garmentPrintClassification.subjectTreatment 不合法")
+    if value.get("visualSystem") not in VISUAL_SYSTEMS:
+        errors.append("garmentPrintClassification.visualSystem 不合法")
+    layout = value.get("layoutStructure")
+    if layout not in LAYOUT_STRUCTURES:
+        errors.append("garmentPrintClassification.layoutStructure 不合法")
+    readiness = value.get("printReadiness")
+    if readiness not in PRINT_READINESS_LEVELS:
+        errors.append("garmentPrintClassification.printReadiness 不合法")
+    deanalysis = value.get("deanalysisRequired")
+    if not isinstance(deanalysis, bool):
+        errors.append("garmentPrintClassification.deanalysisRequired 必须是 boolean")
+    if layout == "annotated-callouts" and value.get("designProduct") != "analysis-board":
+        errors.append("annotated-callouts 只能归入 analysis-board")
+    if readiness == "C" and deanalysis is not True:
+        errors.append("printReadiness=C 必须设置 deanalysisRequired=true")
+    if readiness in {"A", "B"} and deanalysis is not False:
+        errors.append("printReadiness=A/B 必须设置 deanalysisRequired=false")
+
+
 def validate_data(data: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(data, dict):
@@ -271,6 +322,7 @@ def validate_data(data: Any) -> list[str]:
         errors.append("referenceType 不合法")
     if data.get("extractionMode") not in EXTRACTION_MODES:
         errors.append("extractionMode 不合法")
+    check_garment_print_classification(errors, data.get("garmentPrintClassification"))
     check_text_list(errors, "referenceContentInventory", data.get("referenceContentInventory"), 1, 100, maximum_length=120)
     blocklist = set(check_text_list(errors, "referenceContentBlocklist", data.get("referenceContentBlocklist"), 1, 100, maximum_length=120))
 

@@ -189,7 +189,8 @@ def migrate_directory(input_path: Path, output_path: Path) -> dict[str, Any]:
         shutil.copytree(source_dir, output_dir, dirs_exist_ok=False)
         data = json.loads(source_file.read_text(encoding="utf-8"))
         migrated = migrate_template(data)
-        for field in ("cover", "referenceImage"):
+        migrated.pop("referenceImage", None)
+        for field in ("cover",):
             migrated[field] = retarget_local_asset(data.get(field), source_file, output_file)
         output_file.write_text(
             json.dumps(migrated, ensure_ascii=False, indent=2) + "\n",

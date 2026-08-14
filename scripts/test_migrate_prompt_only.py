@@ -93,7 +93,6 @@ class MigrationTests(unittest.TestCase):
             data = {
                 "key": "comic-dot",
                 "cover": "../../01-input/style.png",
-                "referenceImage": "../../01-input/style.png",
                 "promptTemplate": LEGACY_PROMPT,
             }
             source_file = template_dir / "style-template.json"
@@ -104,7 +103,7 @@ class MigrationTests(unittest.TestCase):
             migrated = json.loads(migrated_file.read_text(encoding="utf-8"))
             self.assertEqual(summary["templates"], 1)
             self.assertTrue((migrated_file.parent / migrated["cover"]).resolve().is_file())
-            self.assertEqual(migrated["cover"], migrated["referenceImage"])
+            self.assertNotIn("referenceImage", migrated)
             self.assertNotIn("第 1 张", migrated["promptTemplate"])
 
 

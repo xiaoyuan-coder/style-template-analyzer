@@ -26,7 +26,6 @@ REQUIRED_FIELDS = {
     "description",
     "kind",
     "cover",
-    "referenceImage",
     "imageSize",
     "imageN",
     "promptTemplate",
@@ -41,7 +40,7 @@ SOURCE_REF_FIELDS = {"producerKey", "styleAsset", "taxonomyVersion"}
 STYLE_ANALYSIS_FIELDS = {"surfaceTexture", "composition", "backgroundPolicy", "note"}
 SOURCE_IMAGE_MARKERS = ("用户上传图", "用户原图")
 SINGLE_IMAGE_MARKERS = ("唯一图片输入", "唯一输入图片", "唯一图像输入", "只使用用户上传图这一张图片")
-FRAME_DIRECTION_MARKERS = ("画幅方向", "横竖方向", "画布方向")
+FRAME_DIRECTION_MARKERS = ("画幅方向", "横竖方向", "画布方向", "相同方向", "方向一致")
 ASPECT_RATIO_MARKERS = ("宽高比", "纵横比")
 FRAME_INHERITANCE_MARKERS = ("跟随", "保持", "继承", "沿用")
 SUBJECT_SCOPE_MARKERS = ("全部显著主体", "默认保留显著主体", "主主体")
@@ -268,21 +267,11 @@ def validate_data(
     key = data.get("key")
     if not isinstance(key, str) or not KEY_RE.fullmatch(key):
         errors.append("key 格式不合法")
-    check_text(errors, "title", data.get("title"), 1, 60)
+    check_text(errors, "title", data.get("title"), 3, 6)
     check_text(errors, "description", data.get("description"), 1, 240)
     if data.get("kind") != "STYLE_REF":
         errors.append("kind 必须为 STYLE_REF")
     check_asset(errors, template_file, "cover", data.get("cover"), asset_mode, domain, prefix)
-    check_asset(
-        errors,
-        template_file,
-        "referenceImage",
-        data.get("referenceImage"),
-        asset_mode,
-        domain,
-        prefix,
-    )
-
     image_size = data.get("imageSize")
     match = SIZE_RE.fullmatch(image_size) if isinstance(image_size, str) else None
     if not match or any(not 256 <= int(part) <= 4096 for part in match.groups()):

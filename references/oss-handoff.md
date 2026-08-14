@@ -36,10 +36,10 @@ pnpm style:finalize <input> \
 
 1. 递归查找 `style-template.json`。
 2. 以 local/either 模式校验研发字段、prompt-only 角色、资源和批次 key。
-3. 读取 `cover` 与 `referenceImage`，按 SHA-256 去重。
+3. 读取 `cover`，按 SHA-256 去重。
 4. 上传到 `<prefix>style/templates/<uuid>.<ext>`。
 5. PUT 成功后执行 HEAD。
-6. 把两个字段替换为当前 assets 域名下的 HTTPS URL；它们继续只用于展示和离线追溯。
+6. 把 `cover` 替换为当前 assets 域名下的 HTTPS URL；该字段继续只用于前端展示。
 7. 以 remote 模式校验临时 JSON。
 8. 原子写入 `<key>.json`。
 
@@ -51,7 +51,7 @@ pnpm style:finalize <input> \
 - 相同 SHA-256 在本次运行和重试中复用 URL。
 - 源 `style-template.json` 保持不变。
 - 已处于当前域名、环境前缀和 `style/templates/` 下的受控 URL 直接复用。
-- handoff JSON 中保留 `referenceImage` 只为研发 Schema 兼容；生成适配器只提交用户 `source` 和 `promptTemplate`。
+- handoff JSON 不含 `referenceImage`；生成适配器只提交用户 `source` 和 `promptTemplate`。
 
 失败时保留恢复记录，修复配置或网络后重跑同一命令。
 
