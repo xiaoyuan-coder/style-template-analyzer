@@ -67,10 +67,21 @@ class SelfProductionStrategyTests(unittest.TestCase):
         self.assertIn("数量目标或“模板包”字样不能跳过审批", self.strategy)
         self.assertIn("批准本身也不触发上传", self.oss_handoff)
 
+    def test_exact_visual_revision_is_frozen_before_finalization(self) -> None:
+        for marker in (
+            "具体视觉 revision", "selectedCoverSha256", "prompt SHA",
+            "validate_approved_variants.py", "批准专用编译规格",
+        ):
+            self.assertIn(marker, self.skill + self.strategy + self.architecture)
+        self.assertIn("首版、retry、replacement 和总览副本", self.strategy)
+        self.assertIn("运行时图片数组仍只含用户上传图", self.strategy)
+
     def test_manifest_tracks_strategy_and_regression_test(self) -> None:
         manifest = json.loads((self.skill_root / "skill-manifest.json").read_text(encoding="utf-8"))
-        self.assertGreaterEqual(tuple(map(int, manifest["version"].split("."))), (4, 2, 0))
+        self.assertGreaterEqual(tuple(map(int, manifest["version"].split("."))), (4, 3, 0))
         self.assertIn("references/self-production-strategy.md", manifest["tracked_files"])
+        self.assertIn("scripts/validate_approved_variants.py", manifest["tracked_files"])
+        self.assertIn("scripts/test_approved_variant_selection.py", manifest["tracked_files"])
         self.assertIn("scripts/test_self_production_strategy.py", manifest["tracked_files"])
 
 

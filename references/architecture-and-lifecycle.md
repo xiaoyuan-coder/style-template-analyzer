@@ -16,6 +16,7 @@
 ```text
 reference → compile ───────────────────────────────────────┐
 baseline → produce → candidate preview → explicit approval │
+                    → exact variant freeze
                     → post-approval finalization request ──┤
                                                           ↓
                       cover → lightweight check → OSS upload
@@ -26,12 +27,12 @@ baseline → produce → candidate preview → explicit approval │
 
 ### 2.1 `produce` 的批准前门禁
 
-自生产先执行 `references/self-production-strategy.md`：以图形语言 X 和空间结构 Y 组成候选，直接生成效果图，检查审美非退化、结构差异、信息增量、完整闭合、跨输入泛化和测试图展示质量。只有用户明确批准且随后发出最终化指令的方向，才能进入候选编译、测试图正式分配和 OSS 最终化。弱 Y、同构换皮、机械重复、伪框/伪蒙版、无关系的媒介并置、过度变形、随机裁切或测试图干扰判断的方向在此阶段淘汰。
+自生产先执行 `references/self-production-strategy.md`：以图形语言 X 和空间结构 Y 组成候选，直接生成效果图，检查审美非退化、结构差异、信息增量、完整闭合、跨输入泛化和测试图展示质量。用户通过附件选图时，批准对象是具体视觉 revision；首版、retry、replacement 和总览副本统一纳入精确匹配。收到最终化指令后，先冻结批准专用编译规格并通过封面/prompt 双 SHA 门禁，再进入测试图正式分配和 OSS 最终化。弱 Y、同构换皮、机械重复、伪框/伪蒙版、无关系的媒介并置、过度变形、随机裁切或测试图干扰判断的方向在此阶段淘汰。
 
 ## 3. 单模板事务
 
 1. 对 `runRoot + deliverySetId + key + revision` 取得跨进程 identity 锁。
-2. 校验候选、批准基线、新颖性和整批 ready 容量，预留 `deliverySetId + key + revision → assetId`。
+2. 校验具体批准 revision、批准专用编译规格、封面/prompt 双 SHA、批准基线、新颖性和整批 ready 容量，预留 `deliverySetId + key + revision → assetId`。
 3. 在 revision 同级临时工作区写模板草稿、分析、预留证据和状态 checkpoint。
 4. 调用生成器产出本地 `cover.png`，执行轻量封面检查；模板画面问题最多重生成一次，仍失败则保存失败 revision。
 5. preview 请求在待发布产物处结束，不创建模板包；`compile` 默认请求继续进入 OSS，`produce` 仅在批准记录和批准后的最终化指令同时存在时继续进入 OSS。
@@ -63,6 +64,7 @@ baseline → produce → candidate preview → explicit approval │
 | `style_source_adapter.mjs` | 合规来源采集、来源级熔断、metadata checkpoint |
 | `style_pool_ingest.py` | 图片下载、视觉门禁、asset checkpoint、标准化与入池 |
 | `style_v3_workflow.py` | compile/produce、轻量封面检查、OSS 最终化和评测事务编排 |
+| `validate_approved_variants.py` | 批准集合、精确视觉 revision、封面/prompt 双 SHA 和测试图唯一性门禁 |
 | `finalize_style_batch.mjs` | OSS dry-run、受控域名上传、正式 URL 回填与官方 JSON 输出适配 |
 
 ## 6. 业务目录

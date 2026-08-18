@@ -1,4 +1,4 @@
 interface:
   display_name: "风格模板分析与自生产"
   short_description: "从参考图或批准基线生产 OSS 最终化模板包与唯一真图封面"
-  default_prompt: "使用 $style-template-analyzer 从参考图编译或从批准基线自生产 prompt-only 风格模板；自生产候选明确 X 图形语言、Y 空间语法、B 内容绑定与 C 边界策略，先生成效果图供审批，再用唯一真实摄影测试图生成封面并完成 OSS 最终化。"
+  default_prompt: "使用 $style-template-analyzer 从参考图编译或从批准基线自生产 prompt-only 风格模板；自生产候选明确 X 图形语言、Y 空间语法、B 内容绑定与 C 边界策略，精确识别用户选中的首版、retry 或 replacement revision，冻结封面/prompt 双 SHA 后再分配唯一真实摄影测试图并完成 OSS 最终化。"

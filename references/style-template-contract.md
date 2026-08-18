@@ -180,4 +180,6 @@ validator 要求 `promptTemplate` 同时包含：
 
 只有第二种状态可以命名为 `package/` 并交付。待发布数据使用隐藏 `.prepublish/` 目录与 `prepublish/` 内容目录。`cover` 按 SHA-256 去重上传，OSS 失败或最终契约失败时不发布公开 revision。
 
+自生产的候选审批图只提供离线设计证据。当用户选中总览外候选、首版或同 key 的其他视觉 revision 时，最终编译使用精确封面 SHA 绑定的批准专用规格；运行时仍只提交用户 `source` 和冻结后的 `promptTemplate`。
+
 存量 `effect.png` 、v3 `fast-package` 和独立 `oss-handoff` 继续由 legacy profile 读取，不影响新版默认完成点。
