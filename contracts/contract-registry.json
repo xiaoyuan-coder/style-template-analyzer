@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "3.0.0",
+  "supportedMajors": [1, 2, 3],
+  "producer": "style-template-analyzer",
+  "packageArtifactType": "style_template_package",
+  "artifactTypes": {
+    "style_analysis": {
+      "schemaVersion": "2.0.0",
+      "businessFile": "style-analysis.json",
+      "officialShape": false
+    },
+    "style_template": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "style-template.json",
+      "officialShape": true
+    },
+    "style_evaluation": {
+      "schemaVersion": "2.0.0",
+      "businessFile": "style-evaluation.json",
+      "officialShape": false
+    },
+    "style_handoff": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "<key>.json",
+      "officialShape": true
+    },
+    "style_cover": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "cover.png",
+      "officialShape": false
+    },
+    "test_image_assignment": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "test-image-assignment.json",
+      "officialShape": false
+    },
+    "cover_generation_receipt": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "cover-generation-receipt.json",
+      "officialShape": false
+    },
+    "cover_check_receipt": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "cover-check-receipt.json",
+      "officialShape": false
+    },
+    "oss_finalization_receipt": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "oss-finalization-receipt.json",
+      "officialShape": false
+    },
+    "baseline_snapshot": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "baseline-snapshot.json",
+      "officialShape": false
+    },
+    "self_production_analysis": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "self-production-analysis.json",
+      "officialShape": false
+    },
+    "source_package_receipt": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "source-package-receipt.json",
+      "officialShape": false
+    }
+  },
+  "legacyStages": {
+    "authoring": ["style_analysis", "style_template"],
+    "evaluation": ["style_analysis", "style_template", "style_evaluation"],
+    "handoff": ["style_handoff"]
+  },
+  "v3Stages": {
+    "package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt"],
+    "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"],
+    "oss-handoff": ["style_template", "style_cover", "style_handoff", "source_package_receipt"]
+  },
+  "v4Stages": {
+    "prepublish": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt"],
+    "final-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt", "oss_finalization_receipt"],
+    "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"]
+  },
+  "legacyPayloadVersions": {
+    "style_analysis": ["2.0"],
+    "style_evaluation": ["2.0"]
+  }
+}

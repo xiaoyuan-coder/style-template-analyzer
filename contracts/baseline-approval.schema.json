@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-baseline-approval.schema.json",
+  "title": "StyleBaselineApproval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "approved", "approvedAt", "expectedCount", "digest", "businessRoot", "note"],
+  "properties": {
+    "artifactType": {"const": "style_baseline_approval"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "approved": {"const": true},
+    "approvedAt": {"type": "string", "minLength": 1},
+    "expectedCount": {"type": "integer", "minimum": 1},
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "businessRoot": {"type": "string", "minLength": 1},
+    "note": {"type": "string", "minLength": 1}
+  }
+}

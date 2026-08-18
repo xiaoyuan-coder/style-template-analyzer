@@ -1,99 +1,117 @@
 ---
 name: style-template-analyzer
-description: 把单张参考图、原图/效果图对比、结构化视觉系统或批量素材离线编译为 prompt-only 整图视觉重构模板；识别绘制风格、材质工艺、主体形态、视觉系统、信息表达和构图结构，声明主体、环境、派生内容与固定结构权限，运行时只输入用户图。用于风格迁移、玩偶/黏土/像素等形态转换、CRT/UI、分格与多视角、摄影素材救援、参考内容泄漏、整批重跑和 90 分质量验收。
+description: 把参考图编译为 prompt-only 风格模板最终包，或基于已批准模板基线自主生产新模板；为每个模板分配唯一真实摄影测试图、生成封面并在 OSS 回填后交付。用于风格模板、参考图编译、模板自生产、封面图、真实测试图池、批量生产、真图评测、OSS 最终化、契约迁移与维护审计。
 ---
 
-# 整图视觉重构模板分析器
+# 风格模板分析与自生产
 
-把离线参考素材编译成可重复执行的视觉变换契约和运行提示词。运行时只向模型提交用户上传图；`cover` 只用于前端展示，离线取证信息进入分析档案。现有技术名称 `style-template-analyzer`、`STYLE_REF` 和 `style-*.json` 作为兼容层保留。
+核心交付是最终模板包：一份已经回填受控 OSS 封面 URL 的 `style-template.json` 和一张 `cover.png`。封面由模板 prompt 作用于预取的唯一真实摄影测试图得到。OSS 最终化属于默认生产流程，完成前只存在内部待发布产物；完整真图评测是拿包后的显式独立阶段。
 
-## 请求路由
+## 先选择动作
 
-| 意图 | 产物 | 必读 |
+| 用户意图 | 动作 | 必读参考 |
 | --- | --- | --- |
-| 分析参考素材、生成模板 | `style-analysis.json`、`style-template.json` | `references/style-analysis-and-prompting.md`、`references/style-template-contract.md` |
-| 批量分析或整批重跑 | 每模板两份 JSON、批次清单 | 同上 |
-| 服装印制分类、模板泛化或业务适配复核 | 分类记录、模板或批次评测 | `references/garment-print-template-taxonomy.md` |
-| 摄影、拼版、覆盖层或低信息救援 | 分析、运行模板、待验证标记 | `references/hybrid-reference-salvage.md` |
-| 真实生成与验收 | 候选图、`style-evaluation.json` | `references/style-analysis-and-prompting.md`、`references/style-template-contract.md` |
-| OSS 与研发交付 | `<key>.json` | `references/oss-handoff.md` |
+| 从参考图制作模板 | `compile` | `references/style-analysis-and-prompting.md`、`references/style-template-contract.md` |
+| 基于现有模板自主生产 | `produce` | `references/self-production-strategy.md`、`references/style-template-contract.md`、`references/architecture-and-lifecycle.md` |
+| 补充或审核真实摄影测试图 | `maintain-test-pool` | `references/test-image-pool.md`、`references/test-image-admission.md` |
+| 只看本地草稿与封面，暂不上传 | `compile/produce: preview` | `references/architecture-and-lifecycle.md` |
+| 对已有最终包做完整评测 | `evaluate` | `references/style-template-contract.md` |
+| OSS 配置、恢复与正式 URL 规则 | 默认生产内核 | `references/oss-handoff.md` |
+| 修改 Skill、Schema 或迁移存量 | 维护模式 | `references/architecture-and-lifecycle.md`、`references/v3-migration.md` |
 
-普通分析停在本地。用户明确要求上传、最终交付或后端导入时再执行 OSS 流程。
+服装印制分类读取 `references/garment-print-template-taxonomy.md`；摄影、拼版、覆盖层或低信息参考救援读取 `references/hybrid-reference-salvage.md`。
 
-## 三层产物
+## `compile`：参考图编译
 
-1. `style-analysis.json`：内部取证档案。使用 2.0 分析契约，保存视觉变换契约、七维成像指纹、3–6 个标志性机制、参考内容禁迁移清单和可选救援计划。
-2. `style-template.json`：研发运行模板。只保存现有研发字段；所有必须生效的变换权限都编入 `promptTemplate`。
-3. `style-evaluation.json`：独立验收记录。使用 2.0 评分维度，检查机制还原、主体特征连续性、内容与关系、固定结构与派生、全像素非摄影覆盖、画幅与构图。
+1. 读取参考图，建立用户内容不变量、授权变换、模板常量和参考禁迁移四本账。
+2. 写 `style-analysis.json`，形成七维成像指纹和 3–6 个可评分机制。
+3. 编译官方形状的 `style-template.json`；运行时只称“用户上传图”，不得依赖参考图。
+4. 从本地 ready 测试图池为 `deliverySetId + key + revision` 预留唯一摄影图。
+5. 用测试图作为唯一图片输入运行模板 prompt，生成 PNG 封面。
+6. 执行轻量封面检查；只拦截不可读、模板效果未体现、主体严重损坏、异常文字或水印，同一测试图最多生成两次。
+7. 除非用户明确 preview，上传封面到受控 OSS、回填正式 URL、执行最终契约校验，再原子发布最终模板包；失败时不留下公开半包。
 
-## 核心流程
+参考图只提供离线设计证据。封面测试图来自测试图池，来源参考图不得直接充当默认测试图。
 
-1. 检查参考图片格式、尺寸、重复文件和编号连续性。
-2. 识别参考结构：单图、分离的原图/效果图、拼接对比图、带标注对比图。
-3. 建立参考内容清单，分开案例主体、可授权的固定视觉结构和纯成像规律。
-4. 选择提取模式：直接重构、前后差分、混合算子救援或低信息救援。
-5. 先按 `garment-print-template-taxonomy.md` 判定唯一用户可见分类，再记录成图产品、视觉实现、版式结构与印制适配等级，最后确定一个或多个变换家族。
-6. 编写 `transformationContract`：声明显著主体或主主体选择、形态、动作/视角、呈现实例、环境、构图、固定结构与受控派生内容。
-7. 取证七维成像指纹，再选出 3–6 个标志性机制。机制需要肉眼可证、跨主体成立、能够改变最终像素并可评分。
-8. 用“固定关键参数 + 核心机制或结构”命名，公开中文标题控制在 3–6 个字符且批次内唯一；新 key 表达输出效果，存量 key 保持稳定。
-9. 按变换契约编译 prompt-only `promptTemplate`。运行提示词只称“用户上传图”，不提参考图、图片序号或案例物象。
-10. 先运行分析 validator，再运行模板 validator。静态证据、权限、字段和 prompt-only 角色全部通过后进入生成测试。
-11. 真实生成每次只提交 `source` 一张图和 `promptTemplate`，输出沿用用户图横竖方向和宽高比。
-12. 使用至少四类差异明显的输入，每类生成 2–4 个候选，由独立复核者填写 2.0 验收记录。
+## `produce`：模板自生产
 
-## 服装印制优先级
+1. 只读取 `references/approved-baseline.json` 指向的批准基线。当前批准集合为 94 个模板，摘要必须匹配。
+2. 用 `图形语言 X + 空间结构 Y` 设计候选；X 与 Y 都必须明显改变最终像素。材质默认只作辅助表现，不把工艺制作感作为印制模板的主要 X。
+3. 同批候选覆盖多个 Y 家族，禁止沿用同一结构骨架反复换皮；CRT、街机和窗口只算一个界面结构家族。
+4. 在正式编译前直接生成效果图供用户评审。先检查 Y、完整闭合与跨输入泛化，再检查 X；文字示意不替代直接视觉结果。
+5. `artwork` 和 `emblem` 默认保留完整外轮廓与约 8%–12% 安全边距；显著主体不得拦腰裁切、贴边截断或被嵌套结构吞并。
+6. 记录批准项和淘汰项，只编译用户批准方向；测试图自身难看或干扰判断时立即更换，并退出当前 ready 选择。
+7. 对 key、中文标题、prompt 机制签名和类别做新颖性检查，在任何付费生成前一次性检查 ready 测试图容量。
+8. 每个合格候选复用 `compile` 的唯一分配、封面生成和原子交付内核。自生产只创建新候选，不改写、移动或归档基线。
 
-- 默认目标是一幅可直接印在服装上的完整图案，主体与风格先于解释性结构。
-- 前端只使用手绘、版印、漫画、像素、材质、图形、拼贴、分镜、界面九个单层分类，每个模板唯一归属。内部继续分别记录成图产品、媒介、主体形态、视觉系统、版式结构和印制适配。
-- 拼贴、分镜或界面成为第一视觉特征时优先归入对应结构类；其余按最影响最终像素的成像机制归类。颜色、年代、颗粒、错位和透明底进入名称或内部分析，不新增前端分类。
-- 普通模板默认排除连接线、定位点、分析框、刻度、图例、编号、仪表和说明性局部放大窗。参考素材含这类结构时，保留媒介、色彩与纹理，执行去结构化编译。
-- 漫画分格、装饰拼贴和审美化界面可以保留；它们需要服务整体图案，并保持用户主体占据视觉核心。
-- 只有用户明确要求图鉴、档案、分析或说明书效果时，才授权 `analysis-board`。
-- 生成后先过印制适配门，再评分风格还原。风格优秀但分析组件抢占画面的结果进入 `needs-prompt-revision`。
+## 最终包与内部证据
 
-## 全局内容不变量
-
-- 默认保留全部显著主体。只有契约明确使用 `primary-subject` 时才选取主主体。
-- 保留主体集合、身份、面部与体型、轮廓、发型、花纹与配色、服装、配饰、手持物和关键关系。
-- 全部显著主体逐一对应用户图中的原主体。`instanceMode: preserve` 保持基础实例数量；人物、动物、物体及关联物不复制、不合并、不删减、不增殖。
-- `instanceMode: repeat-or-split` 只允许可追溯的重复、分格、局部放大或多视角派生；派生实例保持原主体身份与特征，不扩增为新的独立主体。
-- 环境可以按契约保留、简化、移除、替换或重建。主体关联物不进入普通背景。
-- 模板可以保留经过明确授权的界面、容器、装饰或其他固定视觉结构。案例主体和未授权物象进入禁迁移清单。
-- 用户图的横竖方向和宽高比始终继承；画幅内部构图可以按契约重组。
-- 业务输出使用全像素非摄影重绘。摄影底图、写实皮肤、真实毛发、镜头景深和滤镜式叠加全部退出。
-
-## 提示词编译
-
-按四段编译：
-
-1. 单图独占权、显著主体范围、主体逐一对应、主体特征连续性和画幅继承；
-2. 契约授权的形态、动作/视角、呈现实例、环境、构图、固定结构和受控派生内容；
-3. 3–6 个标志性变换机制及其全局像素表现；
-4. 全像素非摄影重绘、模板未授权内容边界和输出检查。
-
-参考内容禁迁移清单只用于离线审查，不把案例物象名称写回运行提示词。使用“保留原照片、以照片为底图、在原照片上叠加”直接校验失败。详细契约与示例见 `references/style-analysis-and-prompting.md`。
-
-## 校验
-
-```bash
-python skills/style-template-analyzer/scripts/validate_style_analysis.py <template>/style-analysis.json
-python skills/style-template-analyzer/scripts/validate_style_template.py <template>/style-template.json
-python skills/style-template-analyzer/scripts/validate_style_evaluation.py <template>/style-evaluation.json
+```text
+<run>/<key>/<revision>/
+├── artifact-manifest.json
+├── package/
+│   ├── style-template.json
+│   └── cover.png
+└── internal/
+    ├── style-analysis.json 或 self-production-analysis.json
+    ├── baseline-snapshot.json          # produce 才有
+    ├── test-image-assignment.json
+    ├── cover-generation-receipt.json
+    ├── cover-check-receipt.json
+    └── oss-finalization-receipt.json
 ```
 
-OSS 本地预检：
+只把 `package/` 作为模板包交付给用户。内部字段留在相邻 evidence 和 manifest，禁止注入官方 `style-template.json`。
+
+preview 产物保存于 `<run>/.prepublish/<key>/<revision>/`，目录内使用 `prepublish/`，不使用 `package/` 命名，也不向用户声称已经形成模板包。同 revision 后续正式运行复用该测试图和本地封面完成 OSS 最终化。
+
+## 后续阶段
+
+- 只有用户明确要求完整真图评测时，执行 `evaluate(package)`；评测不修改最终包。
+- 用户请求 `compile`、`produce` 或“模板包”已经包含 OSS 授权，默认运行到正式 URL 回填。
+- 只有明确出现“仅预览”或“暂不上传”时才停在待发布产物。
+- 旧 `advance(package, oss-handoff)` 仅用于 v3 存量快速包迁移，不用于新版生产。
+
+## 测试图池边界
+
+- 模板生产只消费本地 ready 池，不在拿包过程中临时采集测试图。
+- 当前交付集合内 `assetId` 唯一；同 revision 重试复用原分配，换图创建新 revision。
+- ready 图不足时在生成前返回 `test_pool_insufficient`。
+- 自动初筛只覆盖证据完整、低风险的 Public Domain / CC0 摄影图；通过视觉准入后才可标记为 ready。
+- 每张 ready 图必须通过可看图的视觉准入审查，确认它像真实用户会从手机相册或个人图库上传的日常照片，同时满足成像中性、无预置风格和测试价值达标。
+- 人物检测独立于元数据类别；首个 200 张国内业务主池只接受中国/东亚人物生活照，并要求平台级人物授权承诺或逐图权利证据。其他可识别人物、插画扫描、明显武器和风险项不得 ready。
+- 当前正式里程碑准备 200 ready，并按人物生活照、宠物、食物饮品、室内家居、日常物品与兴趣、出游街景、花草植物执行固定配额；单类不超过 25%，单一来源不超过 40%。野生动物、馆藏文物、武器、历史档案、专业科研图和极端风光进入独立压力测试集。
+- Pinterest 默认 `policy-blocked`；不得绕过登录、验证码、反爬或访问控制。
+- 首个可用采集适配器读取 Wikimedia Commons 公开 HTML 与许可证据。
+
+## 常用命令
 
 ```bash
-pnpm style:finalize <batch>/模板数据 --dry-run
+# 新版最终包：模板 cover 必须为受控 OSS URL，公开 package/ 严格两文件
+python scripts/validate_style_package.py <revision-root> --profile final-package --assets-domain <assets-host>
+
+# 明确 preview 的待发布产物
+python scripts/validate_style_package.py <prepublish-revision-root> --profile prepublish
+
+# 固化或复核批准基线
+python scripts/style_baseline.py <baseline-root> <snapshot.json> --approved-count 94
+
+# 维护测试图来源；联网采集独立于模板生产
+node scripts/style_source_adapter.mjs --source commons --category Product_photography --limit 20 --checkpoint <metadata-checkpoint.json> --chrome <chrome-path>
+python scripts/style_institutional_source.py --source smithsonian --limit 250 --checkpoint <smithsonian-metadata.json>
+python scripts/style_institutional_source.py --source loc --limit 150 --checkpoint <loc-metadata.json>
+python scripts/style_pool_ingest.py <metadata-checkpoint.json> <pool.json> <assets-dir> --asset-checkpoint <asset-checkpoint.json>
+
+# 存量兼容
+python scripts/validate_style_package.py <target> --profile legacy
 ```
+
+`style_v3_workflow.py` 的公开生产入口为可注入的 `compile` 与 `produce`；两者默认要求 OSS adapter 与受控 assets domain。`compile` 主动调用 compiler，`produce` 先核对批准基线再调用 proposer；真实生成器、轻量封面检查器和 OSS adapter 由当前执行环境接入，自动测试使用 fake adapter。`advance_package(..., evaluation)` 保留为独立评测入口；`compile_reference`、`produce_from_baseline` 与 v3 fast-package 路径只承担存量兼容。
 
 ## 完成标准
 
-- 分析档案使用 2.0 变换契约，每项变化都有授权或保留声明；
-- 最终 JSON 只包含现有研发字段；`STYLE_REF` 承担兼容分类，`cover` 承担前端展示，运行模板不含 `referenceImage`；
-- 运行请求只包含用户图和提示词，输出继承用户图横竖方向与宽高比；
-- 运行提示词完整表达主体逐一对应、主体特征连续性、授权变换、标志性机制和越权内容边界；
-- 真实验收覆盖至少四类输入，每个案例和总体平均分都达到 90，六个维度无短板且无硬失败；
-- 上传、生成测试和独立复核的实际执行情况如实报告。
-- 普通模板达到 `printReadiness=A/B`；意外分析线、标注窗、刻度和图例全部清除。
-- 公开标题为 3–6 个字符且批次内唯一，固定且显著的配色、材质或结构参数进入标题；每个模板拥有且只拥有一个九类用户可见分类。
+- 默认动作在封面上传、正式 URL 回填并发布 `style-template.json + cover.png` 后结束。
+- 官方模板通过 STYLE_REF 契约；封面是有效 PNG，且分配账本证明集合内唯一。
+- manifest 3.0.0 的 `final-package` 路径、artifact 类型、版本和 SHA-256 与实际文件一致，并登记轻量封面检查和 OSS 最终化回执。
+- 失败不会留下公开半包或错误提交的测试图分配。
+- 如实报告评测、OSS、联网采集和人工权利复核是否执行。

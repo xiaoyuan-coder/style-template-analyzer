@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-source-package-receipt.schema.json",
+  "title": "StyleSourcePackageReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "templateKey", "revision", "sourcePackagePath", "sourceManifestSha256"],
+  "properties": {
+    "artifactType": {"const": "source_package_receipt"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "sourcePackagePath": {"type": "string", "minLength": 1},
+    "sourceManifestSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

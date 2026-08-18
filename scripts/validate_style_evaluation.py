@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from style_contracts import KEY_RE
 
-KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
+CURRENT_SCHEMA_VERSION = "2.0.0"
+LEGACY_SCHEMA_VERSIONS = {"2.0"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"}
 DIMENSION_LIMITS = {
     "signatureMechanismFidelity": 30,
@@ -110,8 +111,8 @@ def validate_data(data: Any, evaluation_file: Path) -> list[str]:
     required = {"schemaVersion", "templateKey", "testProtocol", "cases", "aggregate"}
     for field in sorted(required - set(data)):
         errors.append(f"{field} 缺失")
-    if data.get("schemaVersion") != "2.0":
-        errors.append("schemaVersion 必须为 2.0")
+    if data.get("schemaVersion") not in {CURRENT_SCHEMA_VERSION, *LEGACY_SCHEMA_VERSIONS}:
+        errors.append(f"schemaVersion 必须为 {CURRENT_SCHEMA_VERSION}（存量兼容 2.0）")
     if not isinstance(data.get("templateKey"), str) or not KEY_RE.fullmatch(data.get("templateKey", "")):
         errors.append("templateKey 格式不合法")
 

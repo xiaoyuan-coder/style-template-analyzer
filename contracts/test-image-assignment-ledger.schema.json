@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-test-image-assignment-ledger.schema.json",
+  "title": "StyleTestImageAssignmentLedger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "assignments"],
+  "properties": {
+    "artifactType": {"const": "test_image_assignment_ledger"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "assignments": {
+      "type": "array",
+      "items": {"$ref": "test-image-assignment.schema.json"}
+    }
+  }
+}

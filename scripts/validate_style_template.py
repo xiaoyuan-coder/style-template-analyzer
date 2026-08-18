@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from style_contracts import KEY_RE
 
-KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
+import re
+
 SIZE_RE = re.compile(r"^(\d{3,4})x(\d{3,4})$")
 OSS_OBJECT_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const VALIDATOR = path.join(SCRIPT_DIR, "validate_style_template.py");
+const MANIFEST_BUILDER = path.join(SCRIPT_DIR, "build_style_manifest.py");
 const MIME = new Map([
   [".png", "image/png"],
   [".jpg", "image/jpeg"],
@@ -136,6 +137,14 @@ async function defaultValidate(file, mode, config = {}) {
   }
 }
 
+async function defaultBuildManifest(outputDir) {
+  const result = await runProcess("python", [MANIFEST_BUILDER, outputDir, "--stage", "handoff"], process.cwd());
+  if (result.code !== 0 || !result.output.includes("PASS")) {
+    fail(`handoff manifest 生成失败：${outputDir}\n${result.output}`);
+  }
+  return path.join(outputDir, "artifact-manifest.json");
+}
+
 async function createDefaultUploader(config) {
   const { default: OSS } = await import("ali-oss");
   const client = new OSS({
@@ -240,6 +249,7 @@ async function validateExistingOutput(outputDir, keys) {
   const entries = await readdir(outputDir, { withFileTypes: true });
   const unexpected = entries.filter((entry) => {
     if (!entry.isFile() || path.extname(entry.name) !== ".json") return true;
+    if (entry.name === "artifact-manifest.json") return false;
     return !keys.has(path.basename(entry.name, ".json"));
   });
   if (unexpected.length) {
@@ -336,6 +346,9 @@ export async function finalizeStyleBatch(options) {
     await progress({ phase: "uploading", currentTemplate: finalData.key });
   }
 
+  const buildManifest = options.buildManifest ?? defaultBuildManifest;
+  const manifestFile = await buildManifest(outputDir);
+
   if (progressFile) {
     await atomicJson(progressFile, {
       status: "completed",
@@ -352,6 +365,7 @@ export async function finalizeStyleBatch(options) {
     output: outputDir,
     stateFile,
     progressFile,
+    manifestFile,
     templates: templates.length,
     uploaded,
     reused,

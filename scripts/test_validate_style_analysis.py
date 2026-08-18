@@ -44,7 +44,7 @@ def contract() -> dict:
 
 def analysis() -> dict:
     return {
-        "schemaVersion": "2.0",
+        "schemaVersion": "2.0.0",
         "templateKey": "soft-film-grain-salvage",
         "referenceAsset": "../../01-输入/0031.png",
         "referenceType": "single-style-reference",
@@ -80,6 +80,11 @@ def analysis() -> dict:
 
 
 class AnalysisValidatorTests(unittest.TestCase):
+    def test_accepts_legacy_schema_version(self) -> None:
+        data = analysis()
+        data["schemaVersion"] = "2.0"
+        self.assertEqual(MODULE.validate_data(data), [])
+
     def test_accepts_print_ready_artwork_classification(self) -> None:
         data = analysis()
         data["garmentPrintClassification"] = {

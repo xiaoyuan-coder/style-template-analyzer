@@ -11,7 +11,7 @@
 
 ## 展示字段
 
-当前研发 Schema 保留 `kind: STYLE_REF` 作为兼容分类，并使用 `cover` 提供前端封面或效果图。运行模板不保存 `referenceImage`；离线参考素材、分析证据和测试效果通过分析档案、评测记录与生产目录追溯。`STYLE_REF` 不限制模板只执行绘制风格迁移。
+当前研发 Schema 保留 `kind: STYLE_REF` 作为兼容分类，并使用 `cover` 提供前端封面或效果图。运行模板不保存 `referenceImage`；离线参考素材、分析证据和测试效果通过分析档案、评测记录、`artifact-manifest.json` 与生产目录追溯。`STYLE_REF` 可以承载所有已授权的整图视觉重构。
 
 ## 提示词角色
 

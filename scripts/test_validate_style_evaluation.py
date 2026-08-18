@@ -45,7 +45,7 @@ def evaluation(root: Path, case_count: int = 4) -> dict:
             }
         )
     return {
-        "schemaVersion": "2.0",
+        "schemaVersion": "2.0.0",
         "templateKey": "high-gloss-chrome-rendering",
         "testProtocol": {
             "candidateCountPerInput": 4,
@@ -61,6 +61,13 @@ def evaluation(root: Path, case_count: int = 4) -> dict:
 
 
 class EvaluationValidatorTests(unittest.TestCase):
+    def test_accepts_legacy_schema_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = evaluation(root)
+            data["schemaVersion"] = "2.0"
+            self.assertEqual(MODULE.validate_data(data, root / "style-evaluation.json"), [])
+
     def test_accepts_four_case_independent_pass(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

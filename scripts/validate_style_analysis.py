@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Validate 2.0 whole-image visual reconstruction analyses."""
+"""Validate 2.0.0 analyses while preserving explicit legacy 2.0 reads."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
 
+from style_contracts import KEY_RE
 
-KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
+CURRENT_SCHEMA_VERSION = "2.0.0"
+LEGACY_SCHEMA_VERSIONS = {"2.0"}
 REQUIRED_FIELDS = {
     "schemaVersion",
     "templateKey",
@@ -312,8 +313,8 @@ def validate_data(data: Any) -> list[str]:
     extras = set(data) - ALLOWED_FIELDS
     if extras:
         errors.append(f"未知字段：{', '.join(sorted(extras))}")
-    if data.get("schemaVersion") != "2.0":
-        errors.append("schemaVersion 必须为 2.0")
+    if data.get("schemaVersion") not in {CURRENT_SCHEMA_VERSION, *LEGACY_SCHEMA_VERSIONS}:
+        errors.append(f"schemaVersion 必须为 {CURRENT_SCHEMA_VERSION}（存量兼容 2.0）")
     key = data.get("templateKey")
     if not isinstance(key, str) or not KEY_RE.fullmatch(key):
         errors.append("templateKey 格式不合法")

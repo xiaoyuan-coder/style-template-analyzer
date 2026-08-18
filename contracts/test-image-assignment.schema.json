@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-test-image-assignment.schema.json",
+  "title": "StyleTestImageAssignment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "deliverySetId", "templateKey", "revision", "assetId", "assignedAt", "status"],
+  "properties": {
+    "artifactType": {"const": "test_image_assignment"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "deliverySetId": {"type": "string", "minLength": 1},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "assetId": {"type": "string", "minLength": 1},
+    "assignedAt": {"type": "string", "minLength": 1},
+    "status": {"enum": ["reserved", "publishing", "committed"]}
+  }
+}

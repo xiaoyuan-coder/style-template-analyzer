@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-self-production-analysis.schema.json",
+  "title": "StyleSelfProductionAnalysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "templateKey", "baselineDigest", "novelty"],
+  "properties": {
+    "artifactType": {"const": "self_production_analysis"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "baselineDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "novelty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "title", "promptMechanism", "category"],
+      "properties": {
+        "key": {"const": "unique"},
+        "title": {"const": "unique"},
+        "promptMechanism": {"const": "unique"},
+        "category": {"const": "distinct"}
+      }
+    }
+  }
+}

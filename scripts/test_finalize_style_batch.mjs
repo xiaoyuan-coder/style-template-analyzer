@@ -120,8 +120,13 @@ test("uploads one asset and writes a clean STYLE_REF JSON", async () => {
     assert.equal(uploads.length, 1);
     const finalFile = path.join(value.output, "high-gloss-chrome-rendering.json");
     const finalData = JSON.parse(await readFile(finalFile, "utf8"));
+    const manifest = JSON.parse(await readFile(path.join(value.output, "artifact-manifest.json"), "utf8"));
     assert.equal(isManagedRemoteUrl(finalData.cover, CONFIG), true);
     assert.equal("referenceImage" in finalData, false);
+    assert.equal(manifest.artifactType, "style_template_package");
+    assert.equal(manifest.stage, "handoff");
+    assert.equal(manifest.artifacts.length, 1);
+    assert.equal(manifest.artifacts[0].artifactType, "style_handoff");
     assert.equal(await readFile(sourceFile, "utf8"), sourceBefore);
 
     const retryUploads = [];

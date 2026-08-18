@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schemaVersion", "templateKey", "testProtocol", "cases", "aggregate"],
   "properties": {
-    "schemaVersion": {"const": "2.0"},
+    "schemaVersion": {"enum": ["2.0", "2.0.0"]},
     "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
     "testProtocol": {
       "type": "object",

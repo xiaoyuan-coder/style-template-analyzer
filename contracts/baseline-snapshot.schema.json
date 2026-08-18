@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-baseline-snapshot.schema.json",
+  "title": "StyleBaselineSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "approved", "root", "createdAt", "count", "digest", "entries"],
+  "properties": {
+    "artifactType": {"const": "style_baseline_snapshot"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "approved": {"const": true},
+    "root": {"type": "string", "minLength": 1},
+    "createdAt": {"type": "string", "minLength": 1},
+    "count": {"type": "integer", "minimum": 1},
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "title", "path", "sha256"],
+        "properties": {
+          "key": {"type": "string"},
+          "title": {"type": "string"},
+          "path": {"type": "string"},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}

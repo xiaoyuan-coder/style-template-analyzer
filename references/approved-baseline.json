@@ -1,0 +1,11 @@
+{
+  "artifactType": "style_baseline_approval",
+  "schemaVersion": "1.0.0",
+  "producer": "style-template-analyzer",
+  "approved": true,
+  "approvedAt": "2026-08-17",
+  "expectedCount": 94,
+  "digest": "39e6a8fdb3f91b42c955cb226d836f8f42532b8298faf10cf4386ca69ad34442",
+  "businessRoot": "../../05-风格化模板生产/04-研发交付/2026-08-13-94个风格模板与效果图",
+  "note": "本轮唯一有效的自生产基线；其他历史模板不进入默认扫描。"
+}

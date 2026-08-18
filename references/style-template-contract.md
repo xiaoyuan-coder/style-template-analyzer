@@ -1,21 +1,41 @@
 # 整图视觉重构模板数据契约
 
+## 目录
+
+- [1. 文件职责](#1-文件职责)
+- [2. 最终运行字段](#2-最终运行字段)
+- [3. 固定输入结构](#3-固定输入结构)
+- [4. 内容与变换边界](#4-内容与变换边界)
+- [5. 内部分析结构](#5-内部分析结构)
+- [6. 提示词硬门槛](#6-提示词硬门槛)
+- [7. 可选完整验收门槛](#7-可选完整验收门槛)
+- [8. 待发布与最终包](#8-待发布与最终包)
+
 ## 1. 文件职责
 
-每个模板目录使用三份文件：
+每个已完成 revision 使用公开最终包与内部证据分层：
 
 ```text
-<template>/
-├── style-analysis.json
-├── style-template.json
-└── style-evaluation.json   # 真实生成测试后出现
+<revision>/
+├── artifact-manifest.json
+├── package/
+│   ├── style-template.json
+│   └── cover.png
+└── internal/
+    ├── style-analysis.json 或 self-production-analysis.json
+    ├── test-image-assignment.json
+    ├── cover-generation-receipt.json
+    ├── cover-check-receipt.json
+    └── oss-finalization-receipt.json
 ```
 
-- `style-analysis.json` 保存取证与推理，遵循 `style-analysis.schema.json`。
-- `style-template.json` 保存研发运行字段，遵循 `style-template-import.schema.json`。
-- `style-evaluation.json` 保存测试和验收，遵循 `style-evaluation.schema.json`。
+- `package/` 是唯一对用户交付的模板包，严格只含两个文件。
+- `style-template.json` 保存研发运行字段，其 `cover` 已回填受控 OSS URL，遵循 `style-template-import.schema.json`。
+- `internal/` 保存取证、唯一测试图分配、封面生成、轻量检查和 OSS 最终化回执；自生产 revision 另含基线快照。
+- `artifact-manifest.json` 声明 `final-package` 阶段、产物类型、三段式版本、producer 和 SHA-256，遵循 `contracts/artifact-manifest.schema.json`。
+- `style-evaluation.json` 由完整真图评测阶段单独产生，不进入最终模板包。
 
-`style-template.json` 是唯一进入研发导入和 OSS handoff 的文件。`kind: STYLE_REF` 保持现有研发兼容语义，运行方式统一为 prompt-only。`STYLE_REF` 可以承载绘制风格、材质工艺、主体形态、视觉系统、信息表达和构图结构等整图重构。
+`kind: STYLE_REF` 保持现有研发兼容语义，运行方式统一为 prompt-only。`STYLE_REF` 可以承载绘制风格、材质工艺、主体形态、视觉系统、信息表达和构图结构等整图重构。
 
 ## 2. 最终运行字段
 
@@ -84,7 +104,7 @@ testNotes styleEvaluation qualityStatus renderingMethod
 
 ## 5. 内部分析结构
 
-2.0 `style-analysis.json` 至少记录：
+2.0.0 `style-analysis.json` 至少记录；存量 `2.0` 由 legacy gate 读取：
 
 - 参考资源和参考结构；
 - 参考图具体内容清单；
@@ -122,9 +142,9 @@ validator 要求 `promptTemplate` 同时包含：
 
 提示词长度为 120–1200 个字符，推荐 120–700。过长提示词回到分析文件中删减重复、宽泛和低区分度描述。
 
-## 7. 验收门槛
+## 7. 可选完整验收门槛
 
-2.0 `style-evaluation.json` 与运行模板分离。通过状态需要：
+最终模板包完成后不自动执行本节。用户明确调用 `evaluate(package)` 时，2.0.0 `style-evaluation.json` 与运行模板分离。通过状态需要：
 
 - 至少四个跨内容案例；
 - 每个输入生成 2–4 个候选；
@@ -140,17 +160,17 @@ validator 要求 `promptTemplate` 同时包含：
 
 普通服装图案还要通过 `garment-print-template-taxonomy.md` 的印制适配门。意外分析线和说明组件先判 `needs-prompt-revision`；它们压过主体或破坏图案完整性时按业务硬失败处理。
 
-## 8. 本地与 handoff
+## 8. 待发布与最终包
 
-本地模板：
+用户明确要求 preview 时，待发布模板暂时使用本地封面：
 
 ```json
 {
-  "cover": "./effect.png"
+  "cover": "cover.png"
 }
 ```
 
-handoff 模板：
+默认 `compile` 和 `produce` 完成 OSS 上传后，最终模板回填受控 URL：
 
 ```json
 {
@@ -158,4 +178,6 @@ handoff 模板：
 }
 ```
 
-`cover` 通过 SHA-256 去重上传。handoff 目录只包含 `<key>.json`，不包含内部分析、验收记录、批次清单或上传状态。
+只有第二种状态可以命名为 `package/` 并交付。待发布数据使用隐藏 `.prepublish/` 目录与 `prepublish/` 内容目录。`cover` 按 SHA-256 去重上传，OSS 失败或最终契约失败时不发布公开 revision。
+
+存量 `effect.png` 、v3 `fast-package` 和独立 `oss-handoff` 继续由 legacy profile 读取，不影响新版默认完成点。

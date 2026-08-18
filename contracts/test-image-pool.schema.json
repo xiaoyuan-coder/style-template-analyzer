@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-test-image-pool.schema.json",
+  "title": "StyleTestImagePool",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "assets"],
+  "properties": {
+    "artifactType": {"const": "style_test_image_pool"},
+    "schemaVersion": {"enum": ["1.0.0", "1.1.0"]},
+    "producer": {"const": "style-template-analyzer"},
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["assetId", "sourceAdapter", "sourcePageUrl", "imageUrl", "author", "license", "licenseUrl", "rightsStatus", "collectedAt", "mime", "width", "height", "sha256", "perceptualHash", "photographic", "photographicEvidence", "riskLabels", "category", "localPath", "orientation", "status"],
+        "properties": {
+          "assetId": {"type": "string", "minLength": 1},
+          "sourceAdapter": {"type": "string", "minLength": 1},
+          "sourcePageUrl": {"type": "string", "format": "uri"},
+          "imageUrl": {"type": "string", "format": "uri"},
+          "author": {"type": "string", "minLength": 1},
+          "license": {"type": "string", "minLength": 1},
+          "licenseUrl": {"type": "string", "format": "uri"},
+          "rightsStatus": {"enum": ["verified", "manual_review", "rejected"]},
+          "collectedAt": {"type": "string", "minLength": 1},
+          "mime": {"enum": ["image/jpeg", "image/png", "image/webp"]},
+          "width": {"type": "integer", "minimum": 512},
+          "height": {"type": "integer", "minimum": 512},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "perceptualHash": {"type": "string", "pattern": "^[a-f0-9]{16}$"},
+          "photographic": {"type": "boolean"},
+          "photographicEvidence": {"type": "string", "minLength": 1},
+          "riskLabels": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "category": {"type": "string", "minLength": 1},
+          "semanticClusterId": {"type": "string", "minLength": 1},
+          "visualEra": {"enum": ["contemporary", "historical", "unknown"]},
+          "colorMode": {"enum": ["color", "black-and-white", "unknown"]},
+          "plainMuseumObject": {"type": "boolean"},
+          "localPath": {"type": "string", "minLength": 1},
+          "orientation": {"enum": ["landscape", "portrait", "square"]},
+          "status": {"enum": ["ready", "manual_review", "rejected"]}
+        }
+      }
+    }
+  }
+}

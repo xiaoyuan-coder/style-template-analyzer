@@ -2,6 +2,17 @@
 
 前端只展示一个用户可见分类，内部使用多轴记录生产与验收事实。单层分类服务模板浏览，多轴字段服务提示词编译、质量评测和印制判断。
 
+## 目录
+
+- [1. 用户可见分类](#1-用户可见分类-userfacingcategory)
+- [2. 成图产品轴](#2-成图产品轴-designproduct)
+- [3. 视觉实现轴](#3-视觉实现轴)
+- [4. 版式结构轴](#4-版式结构轴-layoutstructure)
+- [5. 印制适配轴](#5-印制适配轴-printreadiness)
+- [6. 模板编译路由](#6-模板编译路由)
+- [7. 提示词约束](#7-提示词约束)
+- [8. 验收](#8-验收)
+
 ## 1. 用户可见分类 `userFacingCategory`
 
 每个模板只选择以下九类中的一个：
@@ -60,6 +71,8 @@
 
 这些字段可以组合。例：`designProduct=artwork`、`renderingMedium=embroidery`、`subjectForm=preserve`；或 `designProduct=interface-system`、`renderingMedium=pixel`、`subjectForm=pixel-character`、`visualSystem=arcade`。
 
+自生产印制模板时，优先把平涂、轮廓、正负形、网点、阈值等可直接印刷的图形语言设为主视觉轴。黏土、金属、钩织、浮雕等实体材料默认只作辅助维度；只有用户明确需要材料形态且适用面足够广时，才把材质设为主轴。材质替换未改变内容组织关系时不构成新的结构候选。
+
 ## 4. 版式结构轴 `layoutStructure`
 
 | 值 | 说明 |
@@ -74,6 +87,8 @@
 | `annotated-callouts` | 局部放大、连接线、标注点、刻度或图例承担解释功能 |
 
 `annotated-callouts` 是服装印制风险信号。出现下列任一组合时默认判为分析板：主图与局部窗之间有连接线；圆点或方框定位细节；色块充当图例；刻度、编号或伪标签解释主体。
+
+`artwork` 与 `badge-or-sticker` 默认要求完整闭合外轮廓和约 8%–12% 安全边距。显著主体、底座、侧翼、放射外环和嵌套内层不得因画布边界产生拦腰裁切或语义残缺。只有明确的满版 `repeat-pattern` 可以触边，且不能切断人物、动物或物体等语义主体。
 
 ## 5. 印制适配轴 `printReadiness`
 
