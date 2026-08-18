@@ -5,26 +5,28 @@
 | 接口 | 输入 | 成功结果 |
 | --- | --- | --- |
 | `compile(reference)` | 参考图、compiler、ready 测试图池、持久 ledger、OSS adapter | 默认返回一个最终模板包；明确 preview 时返回待发布产物 |
-| `produce(baseline)` | 批准记录、candidate proposer、ready 测试图池、持久 ledger、OSS adapter | 默认返回逐条最终模板包结果；明确 preview 时返回待发布产物 |
+| `produce(baseline)` | 批准记录、candidate proposer、ready 测试图池、持久 ledger、OSS adapter | 批准前返回候选效果；批准后收到最终化指令才返回逐条最终模板包结果 |
 | `evaluate(package)` | 已完成最终模板包与独立真图测试集 | 独立评测交接物 |
 | `maintain-test-pool` | 来源、查询、采集上限、checkpoint | 待门禁测试图记录 |
 
-`compile` 与 `produce` 是两个一等入口，共用测试图分配、封面生成、轻量封面检查、OSS 上传、正式 URL 回填、最终契约校验和原子发布内核。网页来源、生成器、OSS 和评测通过适配器接入。请求“模板包”本身包含 OSS 授权；只有明确要求“仅预览”或“暂不上传”时才停在内部待发布产物。
+`compile` 与 `produce` 是两个一等入口，共用测试图分配、封面生成、轻量封面检查、OSS 上传、正式 URL 回填、最终契约校验和原子发布内核。网页来源、生成器、OSS 和评测通过适配器接入。`compile` 的模板包请求包含 OSS 授权；`produce` 先停在候选视觉审批，数量目标或“模板包”字样不能跳过该门禁。批准只更新名单，批准后的“产出通过的模板包”“完成 OSS 最终化”或“上传 OSS”等指令才授权外部写入。
 
 ## 2. 生命周期
 
 ```text
-reference ── compile ─┐
-                     ├── candidate → cover → lightweight check → OSS upload
-baseline ─── produce ┘                                         → URL backfill
-                                                              → final package ── evaluation
+reference → compile ───────────────────────────────────────┐
+baseline → produce → candidate preview → explicit approval │
+                    → post-approval finalization request ──┤
+                                                          ↓
+                      cover → lightweight check → OSS upload
+                            → URL backfill → final package → evaluation
 ```
 
 `final package` 是默认完成点，且只在 OSS 上传、正式 URL 回填和最终契约校验完成后存在。待发布产物是内部状态，不使用 package 命名。真图评测是独立、显式阶段，不阻塞拿包，也不参与 OSS 是否执行的判断。
 
 ### 2.1 `produce` 的批准前门禁
 
-自生产先执行 `references/self-production-strategy.md`：以图形语言 X 和空间结构 Y 组成候选，直接生成效果图，检查结构差异、完整闭合、跨输入泛化和测试图展示质量。保存用户批准记录后，只有批准项才能进入候选编译、测试图正式分配和 OSS 最终化。弱 Y、同构换皮、材质主导且应用面窄、拦腰裁切或测试图干扰判断的方向在此阶段淘汰。
+自生产先执行 `references/self-production-strategy.md`：以图形语言 X 和空间结构 Y 组成候选，直接生成效果图，检查审美非退化、结构差异、信息增量、完整闭合、跨输入泛化和测试图展示质量。只有用户明确批准且随后发出最终化指令的方向，才能进入候选编译、测试图正式分配和 OSS 最终化。弱 Y、同构换皮、机械重复、伪框/伪蒙版、无关系的媒介并置、过度变形、随机裁切或测试图干扰判断的方向在此阶段淘汰。
 
 ## 3. 单模板事务
 
@@ -32,7 +34,7 @@ baseline ─── produce ┘                                         → URL b
 2. 校验候选、批准基线、新颖性和整批 ready 容量，预留 `deliverySetId + key + revision → assetId`。
 3. 在 revision 同级临时工作区写模板草稿、分析、预留证据和状态 checkpoint。
 4. 调用生成器产出本地 `cover.png`，执行轻量封面检查；模板画面问题最多重生成一次，仍失败则保存失败 revision。
-5. preview 请求在待发布产物处结束，不创建模板包；默认请求继续进入 OSS。
+5. preview 请求在待发布产物处结束，不创建模板包；`compile` 默认请求继续进入 OSS，`produce` 仅在批准记录和批准后的最终化指令同时存在时继续进入 OSS。
 6. 上传封面，保存上传回执，把受控正式 URL 回填模板草稿，在 staging 目录执行最终 Schema、URL 域名、哈希、manifest 和严格两文件校验。
 7. 把 ledger 标记为 `publishing`，原子发布最终 revision 目录，再把 ledger 提交为 `committed` 并释放 identity 锁。
 

@@ -14,6 +14,8 @@ class SelfProductionStrategyTests(unittest.TestCase):
         cls.skill_root = Path(__file__).parents[1]
         cls.skill = (cls.skill_root / "SKILL.md").read_text(encoding="utf-8")
         cls.strategy = (cls.skill_root / "references/self-production-strategy.md").read_text(encoding="utf-8")
+        cls.architecture = (cls.skill_root / "references/architecture-and-lifecycle.md").read_text(encoding="utf-8")
+        cls.oss_handoff = (cls.skill_root / "references/oss-handoff.md").read_text(encoding="utf-8")
         cls.taxonomy = (cls.skill_root / "references/garment-print-template-taxonomy.md").read_text(encoding="utf-8")
 
     def test_produce_routes_to_strategy_and_requires_mechanism_model(self) -> None:
@@ -47,9 +49,27 @@ class SelfProductionStrategyTests(unittest.TestCase):
             self.assertIn(marker, self.strategy)
         self.assertIn("用户明确要求图鉴、档案、分析或说明书效果", self.strategy)
 
+    def test_aesthetic_non_regression_and_structure_value_are_hard_gates(self) -> None:
+        for marker in (
+            "审美非退化", "信息增量测试", "可识别主体重复测试", "去结构测试",
+            "变形预算测试", "构图连续测试", "媒介关系测试",
+        ):
+            self.assertIn(marker, self.strategy)
+        self.assertIn("一个完整主锚点 + 一个来源明确的放大细节", self.strategy)
+        self.assertIn("允许混合媒介", self.strategy)
+        self.assertNotIn("统一媒介", self.strategy)
+
+    def test_produce_requires_approval_and_post_approval_finalization_command(self) -> None:
+        for document in (self.skill, self.strategy, self.architecture, self.oss_handoff):
+            self.assertIn("批准", document)
+            self.assertIn("上传 OSS", document)
+        self.assertIn("批准本身只更新名单", self.skill)
+        self.assertIn("数量目标或“模板包”字样不能跳过审批", self.strategy)
+        self.assertIn("批准本身也不触发上传", self.oss_handoff)
+
     def test_manifest_tracks_strategy_and_regression_test(self) -> None:
         manifest = json.loads((self.skill_root / "skill-manifest.json").read_text(encoding="utf-8"))
-        self.assertGreaterEqual(tuple(map(int, manifest["version"].split("."))), (4, 1, 1))
+        self.assertGreaterEqual(tuple(map(int, manifest["version"].split("."))), (4, 2, 0))
         self.assertIn("references/self-production-strategy.md", manifest["tracked_files"])
         self.assertIn("scripts/test_self_production_strategy.py", manifest["tracked_files"])
 
