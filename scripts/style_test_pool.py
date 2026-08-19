@@ -43,17 +43,27 @@ def _validate_contract(data: object, schema_name: str, invalid_code: str) -> Non
             except ValueError:
                 pass
             else:
-                if major > 1:
+                supported_major = 2 if schema_name in {
+                    "test-image-assignment.schema.json",
+                    "test-image-assignment-ledger.schema.json",
+                } else 1
+                if major > supported_major:
                     raise TestPoolError("contract_version_unsupported")
     schema_file = Path(__file__).parents[1] / "contracts" / schema_name
     schema = json.loads(schema_file.read_text(encoding="utf-8"))
     if schema_name == "test-image-assignment-ledger.schema.json":
-        assignment_schema = json.loads(
-            (schema_file.parent / "test-image-assignment.schema.json").read_text(encoding="utf-8")
-        )
-        schema["properties"]["assignments"]["items"] = assignment_schema
+        schema["properties"]["assignments"]["items"] = {"type": "object"}
     if list(Draft202012Validator(schema).iter_errors(data)):
         raise TestPoolError(invalid_code)
+    if schema_name == "test-image-assignment-ledger.schema.json" and isinstance(data, dict):
+        for assignment in data.get("assignments", []):
+            version = assignment.get("schemaVersion") if isinstance(assignment, dict) else None
+            assignment_schema = (
+                "test-image-assignment-v1.schema.json"
+                if version == "1.0.0"
+                else "test-image-assignment.schema.json"
+            )
+            _validate_contract(assignment, assignment_schema, invalid_code)
 
 
 def validate_pool_document(data: object) -> None:
@@ -153,7 +163,9 @@ class TestImagePool:
         return normalized
 
     def ready_distribution(self) -> dict[str, Any]:
-        ready = [asset for asset in self.assets if asset["status"] == "ready"]
+        blocked = {item["assetId"] for item in self.assignments if self._blocks_asset(item)}
+        catalog_ready = [asset for asset in self.assets if asset["status"] == "ready"]
+        ready = [asset for asset in catalog_ready if asset["assetId"] not in blocked]
         total = len(ready)
         categories = Counter(asset["category"] for asset in ready)
         sources = Counter(asset["sourceAdapter"] for asset in ready)
@@ -164,6 +176,16 @@ class TestImagePool:
         museum = sum(asset.get("plainMuseumObject") is True for asset in ready)
         return {
             "ready": total,
+            "catalogReady": len(catalog_ready),
+            "occupied": len(blocked),
+            "legacyHeld": len({
+                item["assetId"] for item in self.assignments
+                if item.get("schemaVersion") == "1.0.0" and self._blocks_asset(item)
+            }),
+            "consumed": len({
+                item["assetId"] for item in self.assignments
+                if item.get("schemaVersion") == "2.0.0" and item.get("status") == "consumed"
+            }),
             "categories": dict(categories),
             "sources": dict(sources),
             "maxCategoryShare": max(categories.values(), default=0) / total if total else 0.0,
@@ -172,26 +194,50 @@ class TestImagePool:
             "plainMuseumObjectShare": museum / total if total else 0.0,
         }
 
-    def capacity(self, delivery_set_id: str) -> int:
-        used = {item["assetId"] for item in self.assignments if item["deliverySetId"] == delivery_set_id}
+    @staticmethod
+    def _blocks_asset(item: dict[str, Any]) -> bool:
+        if item.get("schemaVersion") == "1.0.0":
+            return item.get("status") in {"reserved", "publishing", "committed"}
+        return item.get("status") in {"reserved", "awaiting_approval", "consumed"}
+
+    def capacity(self, delivery_set_id: str | None = None) -> int:
+        """Return globally available ready assets; delivery_set_id is compatibility-only."""
+        used = {item["assetId"] for item in self.assignments if self._blocks_asset(item)}
         return sum(asset["status"] == "ready" and asset["assetId"] not in used for asset in self.assets)
 
     def assign(self, delivery_set_id: str, template_key: str, revision: int) -> dict[str, Any]:
-        assignment = self.reserve(delivery_set_id, template_key, revision)
-        return self.commit(delivery_set_id, template_key, revision)
+        """Compatibility alias for reserving; review readiness requires explicit evidence."""
+        return self.reserve(delivery_set_id, template_key, revision)
 
-    def reserve(self, delivery_set_id: str, template_key: str, revision: int) -> dict[str, Any]:
+    def reserve(
+        self,
+        delivery_set_id: str,
+        template_key: str,
+        revision: int,
+        *,
+        legacy: bool = False,
+    ) -> dict[str, Any]:
         for item in self.assignments:
             if (item["deliverySetId"], item["templateKey"], item["revision"]) == (delivery_set_id, template_key, revision):
+                decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+                if (
+                    item.get("schemaVersion") == "2.0.0"
+                    and item.get("status") == "released"
+                    and decision.get("verdict") == "system_failure"
+                ):
+                    item["status"] = "reserved"
+                    item["assignedAt"] = datetime.now(timezone.utc).isoformat()
+                    item.pop("decision", None)
+                    item.pop("reviewReadyAt", None)
                 return dict(item)
-        used = {item["assetId"] for item in self.assignments if item["deliverySetId"] == delivery_set_id}
+        used = {item["assetId"] for item in self.assignments if self._blocks_asset(item)}
         available = [asset for asset in self.assets if asset["status"] == "ready" and asset["assetId"] not in used]
         if not available:
             raise TestPoolError("test_pool_insufficient")
         chosen = sorted(available, key=lambda item: (item["category"], item["orientation"], item["assetId"]))[0]
         assignment = {
             "artifactType": "test_image_assignment",
-            "schemaVersion": "1.0.0",
+            "schemaVersion": "1.0.0" if legacy else "2.0.0",
             "producer": "style-template-analyzer",
             "deliverySetId": delivery_set_id,
             "templateKey": template_key,
@@ -203,19 +249,137 @@ class TestImagePool:
         self.assignments.append(assignment)
         return dict(assignment)
 
+    def _assignment(self, delivery_set_id: str, template_key: str, revision: int) -> dict[str, Any]:
+        for item in self.assignments:
+            if (item["deliverySetId"], item["templateKey"], item["revision"]) == (
+                delivery_set_id,
+                template_key,
+                revision,
+            ):
+                if item.get("schemaVersion") != "2.0.0":
+                    raise TestPoolError("legacy_assignment_migration_required")
+                return item
+        raise TestPoolError("test_assignment_missing")
+
+    def mark_awaiting_approval(
+        self,
+        delivery_set_id: str,
+        template_key: str,
+        revision: int,
+        *,
+        review_ready_at: str | None = None,
+    ) -> dict[str, Any]:
+        item = self._assignment(delivery_set_id, template_key, revision)
+        if item["status"] == "awaiting_approval":
+            return dict(item)
+        if item["status"] != "reserved":
+            raise TestPoolError("test_assignment_transition_invalid")
+        item["status"] = "awaiting_approval"
+        item["reviewReadyAt"] = review_ready_at or datetime.now(timezone.utc).isoformat()
+        return dict(item)
+
+    def consume(
+        self,
+        delivery_set_id: str,
+        template_key: str,
+        revision: int,
+        *,
+        cover_sha256: str,
+        prompt_sha256: str,
+        reason: str,
+        decided_at: str | None = None,
+    ) -> dict[str, Any]:
+        item = self._assignment(delivery_set_id, template_key, revision)
+        if item["status"] == "consumed":
+            return dict(item)
+        if item["status"] != "awaiting_approval":
+            raise TestPoolError("test_assignment_transition_invalid")
+        item["status"] = "consumed"
+        item["decision"] = {
+            "verdict": "pass",
+            "authority": "human",
+            "decidedAt": decided_at or datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+            "coverSha256": cover_sha256,
+            "promptSha256": prompt_sha256,
+        }
+        return dict(item)
+
     def commit(self, delivery_set_id: str, template_key: str, revision: int) -> dict[str, Any]:
         for item in self.assignments:
-            if (item["deliverySetId"], item["templateKey"], item["revision"]) == (delivery_set_id, template_key, revision):
+            if (item["deliverySetId"], item["templateKey"], item["revision"]) == (
+                delivery_set_id,
+                template_key,
+                revision,
+            ):
+                if item.get("schemaVersion") != "1.0.0":
+                    raise TestPoolError("test_assignment_transition_invalid")
                 item["status"] = "committed"
                 return dict(item)
         raise TestPoolError("test_assignment_missing")
 
-    def release(self, delivery_set_id: str, template_key: str, revision: int) -> None:
-        self.assignments = [
+    def mark_publishing(self, delivery_set_id: str, template_key: str, revision: int) -> dict[str, Any]:
+        for item in self.assignments:
+            if (item["deliverySetId"], item["templateKey"], item["revision"]) == (
+                delivery_set_id,
+                template_key,
+                revision,
+            ):
+                if item.get("schemaVersion") != "1.0.0":
+                    raise TestPoolError("test_assignment_transition_invalid")
+                item["status"] = "publishing"
+                return dict(item)
+        raise TestPoolError("test_assignment_missing")
+
+    def release(
+        self,
+        delivery_set_id: str,
+        template_key: str,
+        revision: int,
+        *,
+        verdict: str | None = None,
+        reason: str | None = None,
+        authority: str = "human",
+        decided_at: str | None = None,
+        cover_sha256: str | None = None,
+        prompt_sha256: str | None = None,
+    ) -> dict[str, Any]:
+        legacy_item = next((
             item for item in self.assignments
             if (item["deliverySetId"], item["templateKey"], item["revision"])
-            != (delivery_set_id, template_key, revision) or item.get("status") == "committed"
-        ]
+            == (delivery_set_id, template_key, revision)
+            and item.get("schemaVersion") == "1.0.0"
+        ), None)
+        if legacy_item is not None:
+            if legacy_item.get("status") == "committed":
+                return dict(legacy_item)
+            self.assignments.remove(legacy_item)
+            return dict(legacy_item)
+        item = self._assignment(delivery_set_id, template_key, revision)
+        if item["status"] == "released":
+            return dict(item)
+        allowed = (
+            item["status"] == "reserved" and authority == "system" and verdict == "system_failure"
+        ) or (
+            item["status"] == "awaiting_approval"
+            and authority == "human"
+            and verdict in {"reject", "manual_release"}
+        )
+        if not allowed:
+            raise TestPoolError("explicit_human_release_required")
+        item["status"] = "released"
+        decision: dict[str, Any] = {
+            "verdict": verdict,
+            "authority": authority,
+            "decidedAt": decided_at or datetime.now(timezone.utc).isoformat(),
+            "reason": reason or "explicit release",
+        }
+        if cover_sha256 is not None:
+            decision["coverSha256"] = cover_sha256
+        if prompt_sha256 is not None:
+            decision["promptSha256"] = prompt_sha256
+        item["decision"] = decision
+        return dict(item)
 
     def asset(self, asset_id: str) -> dict[str, Any]:
         for asset in self.assets:
@@ -286,7 +450,7 @@ class TestImagePool:
             result = operation()
             self._atomic_write(ledger_file, {
                 "artifactType": "test_image_assignment_ledger",
-                "schemaVersion": "1.0.0",
+                "schemaVersion": "2.0.0",
                 "producer": "style-template-analyzer",
                 "assignments": self.assignments,
             })
@@ -294,39 +458,104 @@ class TestImagePool:
 
     def _validate_assignments(self) -> None:
         identities: set[tuple[str, str, int]] = set()
-        assets: set[tuple[str, str]] = set()
+        legacy_assets = {
+            item.get("assetId") for item in self.assignments
+            if item.get("schemaVersion") == "1.0.0" and self._blocks_asset(item)
+        }
+        current_assets: set[str] = set()
         for item in self.assignments:
-            _validate_contract(item, "test-image-assignment.schema.json", "assignment_ledger_invalid")
+            schema_name = (
+                "test-image-assignment-v1.schema.json"
+                if item.get("schemaVersion") == "1.0.0"
+                else "test-image-assignment.schema.json"
+            )
+            _validate_contract(item, schema_name, "assignment_ledger_invalid")
             try:
                 identity = (item["deliverySetId"], item["templateKey"], item["revision"])
-                asset = (item["deliverySetId"], item["assetId"])
+                asset = item["assetId"]
             except (KeyError, TypeError) as error:
                 raise TestPoolError("assignment_ledger_invalid") from error
-            if identity in identities or asset in assets:
+            if identity in identities:
                 raise TestPoolError("assignment_ledger_invalid")
             identities.add(identity)
-            assets.add(asset)
+            if item.get("schemaVersion") == "2.0.0" and self._blocks_asset(item):
+                if asset in current_assets or asset in legacy_assets:
+                    raise TestPoolError("assignment_ledger_invalid")
+                current_assets.add(asset)
 
-    def reserve_persisted(self, delivery_set_id: str, template_key: str, revision: int, ledger_file: Path) -> dict[str, Any]:
-        return self._mutate_persisted(ledger_file, lambda: self.reserve(delivery_set_id, template_key, revision))
+    def reserve_persisted(
+        self,
+        delivery_set_id: str,
+        template_key: str,
+        revision: int,
+        ledger_file: Path,
+        *,
+        legacy: bool = False,
+    ) -> dict[str, Any]:
+        return self._mutate_persisted(
+            ledger_file,
+            lambda: self.reserve(delivery_set_id, template_key, revision, legacy=legacy),
+        )
 
     def refresh_persisted(self, ledger_file: Path) -> None:
         self._mutate_persisted(ledger_file, lambda: None)
 
     def commit_persisted(self, delivery_set_id: str, template_key: str, revision: int, ledger_file: Path) -> dict[str, Any]:
-        return self._mutate_persisted(ledger_file, lambda: self.commit(delivery_set_id, template_key, revision))
+        return self._mutate_persisted(
+            ledger_file,
+            lambda: self.commit(delivery_set_id, template_key, revision),
+        )
 
     def mark_publishing_persisted(self, delivery_set_id: str, template_key: str, revision: int, ledger_file: Path) -> dict[str, Any]:
-        def mark() -> dict[str, Any]:
-            for item in self.assignments:
-                if (item["deliverySetId"], item["templateKey"], item["revision"]) == (delivery_set_id, template_key, revision):
-                    item["status"] = "publishing"
-                    return dict(item)
-            raise TestPoolError("test_assignment_missing")
-        return self._mutate_persisted(ledger_file, mark)
+        return self._mutate_persisted(
+            ledger_file,
+            lambda: self.mark_publishing(delivery_set_id, template_key, revision),
+        )
 
-    def release_persisted(self, delivery_set_id: str, template_key: str, revision: int, ledger_file: Path) -> None:
-        self._mutate_persisted(ledger_file, lambda: self.release(delivery_set_id, template_key, revision))
+    def mark_awaiting_approval_persisted(
+        self,
+        delivery_set_id: str,
+        template_key: str,
+        revision: int,
+        ledger_file: Path,
+        *,
+        review_ready_at: str | None = None,
+    ) -> dict[str, Any]:
+        return self._mutate_persisted(
+            ledger_file,
+            lambda: self.mark_awaiting_approval(
+                delivery_set_id,
+                template_key,
+                revision,
+                review_ready_at=review_ready_at,
+            ),
+        )
+
+    def consume_persisted(
+        self,
+        delivery_set_id: str,
+        template_key: str,
+        revision: int,
+        ledger_file: Path,
+        **decision: Any,
+    ) -> dict[str, Any]:
+        return self._mutate_persisted(
+            ledger_file,
+            lambda: self.consume(delivery_set_id, template_key, revision, **decision),
+        )
+
+    def release_persisted(
+        self,
+        delivery_set_id: str,
+        template_key: str,
+        revision: int,
+        ledger_file: Path,
+        **decision: Any,
+    ) -> dict[str, Any]:
+        return self._mutate_persisted(
+            ledger_file,
+            lambda: self.release(delivery_set_id, template_key, revision, **decision),
+        )
 
     def reconcile_persisted(self, assignment: dict[str, Any], ledger_file: Path) -> dict[str, Any]:
         def reconcile() -> dict[str, Any]:
@@ -338,11 +567,19 @@ class TestImagePool:
             if existing:
                 if existing[0]["assetId"] != assignment["assetId"]:
                     raise TestPoolError("test_asset_already_assigned")
-                if assignment.get("status") == "committed" and existing[0].get("status") in {"reserved", "publishing"}:
-                    existing[0]["status"] = "committed"
+                if existing[0] != assignment:
+                    if (
+                        assignment.get("schemaVersion") == "1.0.0"
+                        and assignment.get("status") == "committed"
+                        and existing[0].get("schemaVersion") == "1.0.0"
+                        and existing[0].get("status") in {"reserved", "publishing"}
+                    ):
+                        existing[0]["status"] = "committed"
+                    else:
+                        raise TestPoolError("test_assignment_state_mismatch")
                 return dict(existing[0])
             if any(
-                item["deliverySetId"] == assignment["deliverySetId"] and item["assetId"] == assignment["assetId"]
+                item["assetId"] == assignment["assetId"] and self._blocks_asset(item)
                 for item in self.assignments
             ):
                 raise TestPoolError("test_asset_already_assigned")
@@ -357,9 +594,8 @@ class TestImagePool:
         revision: int,
         ledger_file: Path,
     ) -> dict[str, Any]:
-        """Serialize assignment updates through a stable sidecar lock and atomic replace."""
-        assignment = self.reserve_persisted(delivery_set_id, template_key, revision, ledger_file)
-        return self.commit_persisted(delivery_set_id, template_key, revision, ledger_file)
+        """Compatibility alias for one persisted reservation."""
+        return self.reserve_persisted(delivery_set_id, template_key, revision, ledger_file)
 
     @classmethod
     def load(cls, pool_file: Path, ledger_file: Path) -> "TestImagePool":

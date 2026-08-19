@@ -54,6 +54,12 @@ class V3SchemaTests(unittest.TestCase):
         asset = self.asset()
         pool = TestImagePool([asset])
         assignment = pool.assign("delivery-1", "fixture-style", 1)
+        self.validate("test-image-assignment-ledger.schema.json", {
+            "artifactType": "test_image_assignment_ledger",
+            "schemaVersion": "2.0.0",
+            "producer": "style-template-analyzer",
+            "assignments": [assignment],
+        })
         self.validate("test-image-pool.schema.json", {
             "artifactType": "style_test_image_pool",
             "schemaVersion": "1.1.0",
@@ -84,6 +90,21 @@ class V3SchemaTests(unittest.TestCase):
             "revision": 1,
             "verdict": "pass",
             "attempts": [{"attempt": 1, "verdict": "pass", "reasons": []}],
+        })
+        self.validate("approval-decision-receipt.schema.json", {
+            "artifactType": "approval_decision_receipt",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer",
+            "deliverySetId": "delivery-1",
+            "templateKey": "fixture-style",
+            "revision": 1,
+            "assetId": "fixture-asset",
+            "verdict": "pass",
+            "authority": "human",
+            "decidedAt": "2026-08-19T00:00:00Z",
+            "reason": "人工验收通过",
+            "coverSha256": "a" * 64,
+            "promptSha256": "b" * 64,
         })
         self.validate("oss-finalization-receipt.schema.json", {
             "artifactType": "oss_finalization_receipt",

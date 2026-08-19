@@ -1,4 +1,4 @@
 interface:
   display_name: "风格模板分析与自生产"
-  short_description: "从参考图或批准基线生产 OSS 最终化模板包与唯一真图封面"
-  default_prompt: "使用 $style-template-analyzer 从参考图编译或从批准基线自生产 prompt-only 风格模板；自生产同时读取 GoodCase after-first 机制库和用户拒绝 BadCase 库，以 before/after 最终观感筛选 X/Y/B/C，自动沉淀明确不通过的 revision，再精确冻结通过项、分配唯一真实摄影测试图并完成 OSS 最终化。"
+  short_description: "生产审核包，按人工验收释放或消费真图，通过后 OSS 最终化"
+  default_prompt: "使用 $style-template-analyzer 路由参考编译或模板自生产：第一阶段只交付 JSON+封面审核包；第二阶段记录我对具体 revision 的 pass/reject/pending/manual_release，只有 pass 消费测试图，pending 只能由我明确释放；第三阶段对通过项上传 OSS、回填 URL 并交付正式包。GoodCase/BadCase、机制解析和测试图池经营作为后续经验沉淀，不阻塞当前交付。"

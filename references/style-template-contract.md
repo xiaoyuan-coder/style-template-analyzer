@@ -9,7 +9,7 @@
 - [5. 内部分析结构](#5-内部分析结构)
 - [6. 提示词硬门槛](#6-提示词硬门槛)
 - [7. 可选完整验收门槛](#7-可选完整验收门槛)
-- [8. 待发布与最终包](#8-待发布与最终包)
+- [8. 审核包与正式包](#8-审核包与正式包)
 
 ## 1. 文件职责
 
@@ -26,13 +26,14 @@
     ├── test-image-assignment.json
     ├── cover-generation-receipt.json
     ├── cover-check-receipt.json
+    ├── approval-decision-receipt.json
     └── oss-finalization-receipt.json
 ```
 
 - `package/` 是唯一对用户交付的模板包，严格只含两个文件。
 - `style-template.json` 保存研发运行字段，其 `cover` 已回填受控 OSS URL，遵循 `style-template-import.schema.json`。
 - `internal/` 保存取证、唯一测试图分配、封面生成、轻量检查和 OSS 最终化回执；自生产 revision 另含基线快照。
-- `artifact-manifest.json` 声明 `final-package` 阶段、产物类型、三段式版本、producer 和 SHA-256，遵循 `contracts/artifact-manifest.schema.json`。
+- `artifact-manifest.json` 声明 `review-package` 或 `final-package` 阶段、产物类型、三段式版本、producer 和 SHA-256，遵循 `contracts/artifact-manifest.schema.json`。
 - `style-evaluation.json` 由完整真图评测阶段单独产生，不进入最终模板包。
 
 `kind: STYLE_REF` 保持现有研发兼容语义，运行方式统一为 prompt-only。`STYLE_REF` 可以承载绘制风格、材质工艺、主体形态、视觉系统、信息表达和构图结构等整图重构。
@@ -160,9 +161,9 @@ validator 要求 `promptTemplate` 同时包含：
 
 普通服装图案还要通过 `garment-print-template-taxonomy.md` 的印制适配门。意外分析线和说明组件先判 `needs-prompt-revision`；它们压过主体或破坏图案完整性时按业务硬失败处理。
 
-## 8. 待发布与最终包
+## 8. 审核包与正式包
 
-用户明确要求 preview 时，待发布模板暂时使用本地封面：
+阶段 1 的审核包使用本地封面：
 
 ```json
 {
@@ -170,7 +171,7 @@ validator 要求 `promptTemplate` 同时包含：
 }
 ```
 
-默认 `compile` 和 `produce` 完成 OSS 上传后，最终模板回填受控 URL：
+人工验收 `pass` 后进入阶段 3，正式模板回填受控 URL：
 
 ```json
 {
@@ -178,8 +179,8 @@ validator 要求 `promptTemplate` 同时包含：
 }
 ```
 
-只有第二种状态可以命名为 `package/` 并交付。待发布数据使用隐藏 `.prepublish/` 目录与 `prepublish/` 内容目录。`cover` 按 SHA-256 去重上传，OSS 失败或最终契约失败时不发布公开 revision。
+第一种状态放在 `review-package/`，第二种状态放在 `package/`；两个公开目录都严格只含 JSON 与封面。`cover` 按 SHA-256 去重上传，OSS 失败或最终契约失败时不发布正式 revision，保留已通过审核包供恢复。
 
 自生产的候选审批图只提供离线设计证据。当用户选中总览外候选、首版或同 key 的其他视觉 revision 时，最终编译使用精确封面 SHA 绑定的批准专用规格；运行时仍只提交用户 `source` 和冻结后的 `promptTemplate`。
 
-存量 `effect.png` 、v3 `fast-package` 和独立 `oss-handoff` 继续由 legacy profile 读取，不影响新版默认完成点。
+存量 `effect.png`、v3 `fast-package`、v4 `prepublish/final-package` 和独立 `oss-handoff` 继续由兼容 profile 读取。

@@ -18,14 +18,17 @@ from style_contracts import (
     LEGACY_STAGES,
     V3_STAGES,
     V4_STAGES,
+    V5_STAGES,
     STAGE_REQUIREMENTS,
     LEGACY_STAGE_REQUIREMENTS,
     V3_STAGE_REQUIREMENTS,
     V4_STAGE_REQUIREMENTS,
+    V5_STAGE_REQUIREMENTS,
     SEMVER_RE,
     read_json,
     sha256_file,
     template_key_for,
+    artifact_schema_version,
 )
 
 
@@ -79,13 +82,15 @@ def validate_data(data: Any, manifest_file: Path, *, verify_files: bool = True) 
         else V3_STAGES
         if package_version == "2.0.0"
         else V4_STAGES
+        if package_version == "3.0.0"
+        else V5_STAGES
     )
     if stage not in supported_stages:
         errors.append("stage 不合法")
     template_key = data.get("templateKey")
     if template_key is not None and (not isinstance(template_key, str) or not KEY_RE.fullmatch(template_key)):
         errors.append("templateKey 格式不合法")
-    if stage in {"authoring", "evaluation", "package", "oss-handoff", "prepublish", "final-package"} and template_key is None:
+    if stage in {"authoring", "evaluation", "package", "oss-handoff", "prepublish", "review-package", "final-package"} and template_key is None:
         errors.append(f"{stage} 阶段必须声明 templateKey")
 
     artifacts = data.get("artifacts")
@@ -126,8 +131,10 @@ def validate_data(data: Any, manifest_file: Path, *, verify_files: bool = True) 
         version = artifact.get("schemaVersion")
         if not isinstance(version, str) or not SEMVER_RE.fullmatch(version):
             errors.append(f"{path_label}.schemaVersion 必须为三段版本")
-        elif version != spec["schemaVersion"]:
-            errors.append(f"{path_label}.schemaVersion 必须为 {spec['schemaVersion']}")
+        else:
+            expected_version = artifact_schema_version(str(artifact_type), str(package_version))
+            if version != expected_version:
+                errors.append(f"{path_label}.schemaVersion 必须为 {expected_version}")
         if artifact.get("officialShape") is not spec["officialShape"]:
             errors.append(f"{path_label}.officialShape 与契约登记不一致")
         digest = artifact.get("sha256")
@@ -155,14 +162,16 @@ def validate_data(data: Any, manifest_file: Path, *, verify_files: bool = True) 
         else V3_STAGE_REQUIREMENTS
         if package_version == "2.0.0"
         else V4_STAGE_REQUIREMENTS
+        if package_version == "3.0.0"
+        else V5_STAGE_REQUIREMENTS
     )
     if stage in supported_stages:
         missing = requirements[stage] - seen_types
         if missing:
             errors.append(f"{stage} 阶段缺少产物：{', '.join(sorted(missing))}")
-        if package_version in {"2.0.0", "3.0.0"} and stage in {"package", "prepublish", "final-package"} and not seen_types.intersection({"style_analysis", "self_production_analysis"}):
+        if package_version in {"2.0.0", "3.0.0", "4.0.0"} and stage in {"package", "prepublish", "review-package", "final-package"} and not seen_types.intersection({"style_analysis", "self_production_analysis"}):
             errors.append(f"{stage} 阶段缺少分析证据")
-    if stage in {"authoring", "evaluation", "package", "oss-handoff", "prepublish", "final-package"} and business_keys != {template_key}:
+    if stage in {"authoring", "evaluation", "package", "oss-handoff", "prepublish", "review-package", "final-package"} and business_keys != {template_key}:
         errors.append("manifest.templateKey 必须与全部业务产物的 key 一致")
     return errors
 

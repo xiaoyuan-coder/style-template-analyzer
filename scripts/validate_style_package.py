@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -63,9 +64,13 @@ def validate_package(
             errors.append("authoring/release gate 缺少 artifact-manifest.json")
     if profile == "release" and not evaluations:
         errors.append("release gate 缺少 style-evaluation.json")
-    strict_profiles = {"fast-package", "prepublish", "final-package"}
+    strict_profiles = {"fast-package", "prepublish", "review-package", "final-package"}
     if profile in strict_profiles:
-        directory_name = "prepublish" if profile == "prepublish" else "package"
+        directory_name = (
+            "prepublish" if profile == "prepublish"
+            else "review-package" if profile == "review-package"
+            else "package"
+        )
         package = root / directory_name if root.is_dir() and (root / directory_name).is_dir() else root
         package_files = sorted(path.relative_to(package).as_posix() for path in package.rglob("*") if path.is_file()) if package.is_dir() else []
         if package_files != ["cover.png", "style-template.json"]:
@@ -127,6 +132,7 @@ def validate_package(
 
     referenced: set[Path] = set()
     manifest_stages: set[str] = set()
+    manifest_v5_final = False
     for file in manifests:
         try:
             data = read_json(file)
@@ -137,12 +143,21 @@ def validate_package(
         errors.extend(f"{file}: {error}" for error in manifest_errors)
         if isinstance(data, dict) and isinstance(data.get("stage"), str):
             manifest_stages.add(data["stage"])
+            manifest_v5_final = (
+                manifest_v5_final
+                or (data.get("schemaVersion") == "4.0.0" and data.get("stage") == "final-package")
+            )
             if profile == "fast-package" and (data.get("schemaVersion") != "2.0.0" or data.get("stage") != "package"):
                 errors.append(f"{file}: fast-package 要求 manifest schemaVersion=2.0.0 且 stage=package")
-            elif profile in {"prepublish", "final-package"}:
-                expected_stage = "prepublish" if profile == "prepublish" else "final-package"
-                if data.get("schemaVersion") != "3.0.0" or data.get("stage") != expected_stage:
-                    errors.append(f"{file}: {profile} 要求 manifest schemaVersion=3.0.0 且 stage={expected_stage}")
+            elif profile == "prepublish":
+                if data.get("schemaVersion") != "3.0.0" or data.get("stage") != "prepublish":
+                    errors.append(f"{file}: prepublish 要求 manifest schemaVersion=3.0.0 且 stage=prepublish")
+            elif profile == "review-package":
+                if data.get("schemaVersion") != "4.0.0" or data.get("stage") != "review-package":
+                    errors.append(f"{file}: review-package 要求 manifest schemaVersion=4.0.0 且 stage=review-package")
+            elif profile == "final-package":
+                if data.get("schemaVersion") not in {"3.0.0", "4.0.0"} or data.get("stage") != "final-package":
+                    errors.append(f"{file}: final-package 要求 manifest schemaVersion=3.0.0/4.0.0 且 stage=final-package")
         if isinstance(data, dict) and isinstance(data.get("artifacts"), list):
             for artifact in data["artifacts"]:
                 if isinstance(artifact, dict) and isinstance(artifact.get("path"), str):
@@ -162,18 +177,21 @@ def validate_package(
         receipts = collect(root, "cover-generation-receipt.json")
         cover_checks = collect(root, "cover-check-receipt.json")
         oss_receipts = collect(root, "oss-finalization-receipt.json")
+        approval_receipts = collect(root, "approval-decision-receipt.json")
         self_analyses = collect(root, "self-production-analysis.json")
         baseline_snapshots = collect(root, "baseline-snapshot.json")
         if len(assignments) != 1 or len(receipts) != 1:
             errors.append(f"{profile} 必须包含唯一测试图分配与封面生成回执")
         if len(analyses) + len(self_analyses) != 1:
             errors.append(f"{profile} 必须包含且只包含一种分析证据")
-        if profile in {"prepublish", "final-package"} and len(cover_checks) != 1:
+        if profile in {"prepublish", "review-package", "final-package"} and len(cover_checks) != 1:
             errors.append(f"{profile} 必须包含唯一轻量封面检查回执")
         if profile == "final-package" and len(oss_receipts) != 1:
             errors.append("final-package 必须包含唯一 OSS 最终化回执")
         if profile == "prepublish" and oss_receipts:
             errors.append("prepublish 不得包含 OSS 最终化回执")
+        if profile == "review-package" and oss_receipts:
+            errors.append("review-package 不得包含 OSS 最终化回执")
         assignment_records: list[dict[str, object]] = []
         receipt_records: list[dict[str, object]] = []
         self_analysis_records: list[dict[str, object]] = []
@@ -184,14 +202,16 @@ def validate_package(
             except (OSError, json.JSONDecodeError) as error:
                 errors.append(f"{file}: JSON 读取失败：{error}")
                 continue
-            errors.extend(f"{file}: {error}" for error in validate_schema(data, "test-image-assignment.schema.json"))
-            required = {"artifactType", "schemaVersion", "producer", "deliverySetId", "templateKey", "revision", "assetId", "assignedAt", "status"}
-            if not isinstance(data, dict) or set(data) != required:
-                errors.append(f"{file}: assignment 字段不符合 1.0.0 契约")
-            elif data.get("artifactType") != "test_image_assignment" or data.get("schemaVersion") != "1.0.0" or data.get("producer") != "style-template-analyzer" or data.get("status") != "committed":
-                errors.append(f"{file}: assignment 契约值不合法")
-            else:
-                assignment_records.append(data)
+            schema_name = "test-image-assignment-v1.schema.json" if isinstance(data, dict) and data.get("schemaVersion") == "1.0.0" else "test-image-assignment.schema.json"
+            schema_errors = validate_schema(data, schema_name)
+            errors.extend(f"{file}: {error}" for error in schema_errors)
+            if not schema_errors and isinstance(data, dict):
+                if profile == "review-package" and data.get("status") not in {"awaiting_approval", "released", "consumed"}:
+                    errors.append(f"{file}: review-package assignment 必须已进入人工审核状态")
+                elif profile == "final-package" and data.get("schemaVersion") == "2.0.0" and data.get("status") != "consumed":
+                    errors.append(f"{file}: v5 final-package assignment 必须为 consumed")
+                else:
+                    assignment_records.append(data)
         for file in receipts:
             try:
                 data = read_json(file)
@@ -228,6 +248,17 @@ def validate_package(
             errors.extend(f"{file}: {error}" for error in schema_errors)
             if not schema_errors and isinstance(data, dict):
                 oss_records.append(data)
+        approval_records: list[dict[str, object]] = []
+        for file in approval_receipts:
+            try:
+                data = read_json(file)
+            except (OSError, json.JSONDecodeError) as error:
+                errors.append(f"{file}: JSON 读取失败：{error}")
+                continue
+            schema_errors = validate_schema(data, "approval-decision-receipt.schema.json")
+            errors.extend(f"{file}: {error}" for error in schema_errors)
+            if not schema_errors and isinstance(data, dict):
+                approval_records.append(data)
         for file in self_analyses:
             try:
                 data = read_json(file)
@@ -277,6 +308,28 @@ def validate_package(
                 errors.append("模板 cover 与 OSS 最终化回执 URL 不一致")
             if domain and str(oss.get("assetsDomain", "")).lower() != domain.lower():
                 errors.append("OSS 最终化回执 assetsDomain 与受控域名不一致")
+        if approval_records and assignment_records:
+            approval = approval_records[0]
+            assignment = assignment_records[0]
+            if any(approval.get(field) != assignment.get(field) for field in ("deliverySetId", "templateKey", "revision", "assetId")):
+                errors.append("审核决定回执与测试图分配身份不一致")
+            if assignment.get("status") == "consumed" and approval.get("verdict") != "pass":
+                errors.append("已消费测试图必须对应人工通过回执")
+            decision = assignment.get("decision") if isinstance(assignment.get("decision"), dict) else {}
+            if assignment.get("status") in {"consumed", "released"}:
+                if any(
+                    approval.get(field) != decision.get(field)
+                    for field in ("verdict", "decidedAt", "reason", "coverSha256", "promptSha256")
+                ):
+                    errors.append("审核决定回执与测试图终态证据不一致")
+            if len(covers) == 1 and approval.get("coverSha256") != hashlib.sha256(covers[0].read_bytes()).hexdigest():
+                errors.append("审核决定 coverSha256 与封面不一致")
+            template = template_records.get(str(assignment.get("templateKey")), {})
+            prompt = template.get("promptTemplate") if isinstance(template, dict) else None
+            if isinstance(prompt, str) and approval.get("promptSha256") != hashlib.sha256(prompt.encode("utf-8")).hexdigest():
+                errors.append("审核决定 promptSha256 与模板不一致")
+        if profile == "final-package" and manifest_v5_final and len(approval_records) != 1:
+            errors.append("v5 final-package 必须包含唯一人工审核决定回执")
         if self_analysis_records and baseline_records:
             if self_analysis_records[0].get("baselineDigest") != baseline_records[0].get("digest"):
                 errors.append("自生产分析与 baseline snapshot digest 不一致")
@@ -295,7 +348,7 @@ def main() -> int:
     parser.add_argument("target", type=Path)
     parser.add_argument(
         "--profile",
-        choices=["legacy", "authoring", "release", "fast-package", "prepublish", "final-package"],
+        choices=["legacy", "authoring", "release", "fast-package", "prepublish", "review-package", "final-package"],
         default="final-package",
     )
     parser.add_argument("--asset-mode", choices=["local", "remote", "either"])

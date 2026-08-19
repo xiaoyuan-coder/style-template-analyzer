@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-approval-decision-receipt.schema.json",
+  "title": "StyleApprovalDecisionReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "deliverySetId", "templateKey", "revision", "assetId", "verdict", "authority", "decidedAt", "reason", "coverSha256", "promptSha256"],
+  "properties": {
+    "artifactType": {"const": "approval_decision_receipt"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "deliverySetId": {"type": "string", "minLength": 1},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "assetId": {"type": "string", "minLength": 1},
+    "verdict": {"enum": ["pass", "reject", "pending", "manual_release"]},
+    "authority": {"const": "human"},
+    "decidedAt": {"type": "string", "format": "date-time"},
+    "reason": {"type": "string", "minLength": 1},
+    "coverSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "promptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

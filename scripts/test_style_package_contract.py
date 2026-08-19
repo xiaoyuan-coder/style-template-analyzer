@@ -187,7 +187,7 @@ class StylePackageContractTests(unittest.TestCase):
             root = Path(directory)
             manifest = {
                 "artifactType": "style_template_package",
-                "schemaVersion": "4.0.0",
+                "schemaVersion": "5.0.0",
                 "producer": "style-template-analyzer",
                 "status": "completed",
                 "revision": 1,

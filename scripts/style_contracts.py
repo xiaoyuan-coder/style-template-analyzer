@@ -11,8 +11,8 @@ from typing import Any
 
 
 PRODUCER = "style-template-analyzer"
-PACKAGE_SCHEMA_VERSION = "3.0.0"
-SUPPORTED_PACKAGE_VERSIONS = {"1.0.0", "2.0.0", "3.0.0"}
+PACKAGE_SCHEMA_VERSION = "4.0.0"
+SUPPORTED_PACKAGE_VERSIONS = {"1.0.0", "2.0.0", "3.0.0", "4.0.0"}
 KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
@@ -44,7 +44,7 @@ ARTIFACT_SPECS = {
     },
     "test_image_assignment": {
         "filenames": {"test-image-assignment.json"},
-        "schemaVersion": "1.0.0",
+        "schemaVersion": "2.0.0",
         "officialShape": False,
     },
     "cover_generation_receipt": {
@@ -54,6 +54,11 @@ ARTIFACT_SPECS = {
     },
     "cover_check_receipt": {
         "filenames": {"cover-check-receipt.json"},
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
+    "approval_decision_receipt": {
+        "filenames": {"approval-decision-receipt.json"},
         "schemaVersion": "1.0.0",
         "officialShape": False,
     },
@@ -120,10 +125,31 @@ V4_STAGE_REQUIREMENTS = {
     "evaluation": {"style_template", "style_cover", "style_evaluation", "source_package_receipt"},
 }
 
-STAGE_REQUIREMENTS = {**LEGACY_STAGE_REQUIREMENTS, **V3_STAGE_REQUIREMENTS, **V4_STAGE_REQUIREMENTS}
+V5_STAGE_REQUIREMENTS = {
+    "review-package": {
+        "style_template",
+        "style_cover",
+        "test_image_assignment",
+        "cover_generation_receipt",
+        "cover_check_receipt",
+    },
+    "final-package": {
+        "style_template",
+        "style_cover",
+        "test_image_assignment",
+        "cover_generation_receipt",
+        "cover_check_receipt",
+        "approval_decision_receipt",
+        "oss_finalization_receipt",
+    },
+    "evaluation": {"style_template", "style_cover", "style_evaluation", "source_package_receipt"},
+}
+
+STAGE_REQUIREMENTS = {**LEGACY_STAGE_REQUIREMENTS, **V3_STAGE_REQUIREMENTS, **V4_STAGE_REQUIREMENTS, **V5_STAGE_REQUIREMENTS}
 LEGACY_STAGES = set(LEGACY_STAGE_REQUIREMENTS)
 V3_STAGES = set(V3_STAGE_REQUIREMENTS)
 V4_STAGES = set(V4_STAGE_REQUIREMENTS)
+V5_STAGES = set(V5_STAGE_REQUIREMENTS)
 
 
 def artifact_type_for(path: Path, stage: str) -> str | None:
@@ -156,7 +182,13 @@ def template_key_for(data: Any, artifact_type: str) -> str | None:
     return value if isinstance(value, str) and KEY_RE.fullmatch(value) else None
 
 
-def artifact_record(path: Path, root: Path, stage: str) -> dict[str, Any]:
+def artifact_schema_version(artifact_type: str, package_schema_version: str) -> str:
+    if artifact_type == "test_image_assignment" and package_schema_version != "4.0.0":
+        return "1.0.0"
+    return str(ARTIFACT_SPECS[artifact_type]["schemaVersion"])
+
+
+def artifact_record(path: Path, root: Path, stage: str, package_schema_version: str) -> dict[str, Any]:
     artifact_type = artifact_type_for(path, stage)
     if artifact_type is None:
         raise ValueError(f"无法识别产物类型：{path}")
@@ -164,7 +196,7 @@ def artifact_record(path: Path, root: Path, stage: str) -> dict[str, Any]:
     return {
         "path": path.relative_to(root).as_posix(),
         "artifactType": artifact_type,
-        "schemaVersion": spec["schemaVersion"],
+        "schemaVersion": artifact_schema_version(artifact_type, package_schema_version),
         "officialShape": spec["officialShape"],
         "sha256": sha256_file(path),
     }
@@ -184,6 +216,8 @@ def build_manifest(
         else V3_STAGES
         if schema_version == "2.0.0"
         else V4_STAGES
+        if schema_version == "3.0.0"
+        else V5_STAGES
     )
     if schema_version not in SUPPORTED_PACKAGE_VERSIONS:
         raise ValueError(f"不支持的 schemaVersion：{schema_version}")
@@ -201,7 +235,7 @@ def build_manifest(
     if not candidates:
         raise ValueError(f"未找到 {stage} 阶段业务 JSON：{root}")
 
-    artifacts = [artifact_record(path, root, stage) for path in candidates]
+    artifacts = [artifact_record(path, root, stage, schema_version) for path in candidates]
     artifact_types = {item["artifactType"] for item in artifacts}
     requirements = (
         LEGACY_STAGE_REQUIREMENTS
@@ -209,11 +243,13 @@ def build_manifest(
         else V3_STAGE_REQUIREMENTS
         if schema_version == "2.0.0"
         else V4_STAGE_REQUIREMENTS
+        if schema_version == "3.0.0"
+        else V5_STAGE_REQUIREMENTS
     )
     missing = requirements[stage] - artifact_types
     if missing:
         raise ValueError(f"{stage} 阶段缺少产物：{', '.join(sorted(missing))}")
-    if schema_version in {"2.0.0", "3.0.0"} and stage in {"package", "prepublish", "final-package"} and not artifact_types.intersection({"style_analysis", "self_production_analysis"}):
+    if schema_version in {"2.0.0", "3.0.0", "4.0.0"} and stage in {"package", "prepublish", "review-package", "final-package"} and not artifact_types.intersection({"style_analysis", "self_production_analysis"}):
         raise ValueError(f"{stage} 阶段缺少分析证据")
 
     keys: set[str] = set()

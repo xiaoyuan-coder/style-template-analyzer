@@ -14,7 +14,7 @@ from validate_style_package import validate_package
 class ApprovedBaseline94Tests(unittest.TestCase):
     def test_current_approved_baseline_matches_count_and_digest(self) -> None:
         skill_root = Path(__file__).parents[1]
-        repo_root = skill_root.parents[1]
+        repo_root = skill_root
         descriptor = json.loads((skill_root / "references" / "approved-baseline.json").read_text(encoding="utf-8"))
         business_root = (repo_root / descriptor["businessRoot"]).resolve()
         if not business_root.is_dir():

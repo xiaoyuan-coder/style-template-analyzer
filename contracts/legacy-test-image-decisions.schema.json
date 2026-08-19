@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/legacy-test-image-decisions.schema.json",
+  "title": "LegacyTestImageDecisions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "decisions"],
+  "properties": {
+    "artifactType": {"const": "legacy_test_image_decisions"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"type": "string", "minLength": 1},
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["deliverySetId", "templateKey", "revision", "verdict", "decidedAt", "reason", "coverSha256", "promptSha256"],
+        "properties": {
+          "deliverySetId": {"type": "string", "minLength": 1},
+          "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+          "revision": {"type": "integer", "minimum": 1},
+          "verdict": {"enum": ["pass", "reject", "pending", "manual_release"]},
+          "decidedAt": {"type": "string", "format": "date-time"},
+          "reason": {"type": "string", "minLength": 1},
+          "coverSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "promptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}

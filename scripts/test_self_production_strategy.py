@@ -38,7 +38,7 @@ class SelfProductionStrategyTests(unittest.TestCase):
             "直接生成候选图", "退出当前 ready 选择",
         ):
             self.assertIn(marker, self.strategy)
-        self.assertIn("只编译批准项", self.strategy)
+        self.assertIn("所有合格候选先编译审核包", self.strategy)
         self.assertNotIn("只有明确的满版 `pattern` 才允许触边", self.strategy)
 
     def test_inspiration_is_compiled_to_mechanisms_without_literal_shells(self) -> None:
@@ -61,13 +61,15 @@ class SelfProductionStrategyTests(unittest.TestCase):
         self.assertIn("允许混合媒介", self.strategy)
         self.assertNotIn("统一媒介", self.strategy)
 
-    def test_produce_requires_approval_and_post_approval_finalization_command(self) -> None:
+    def test_produce_requires_human_review_before_oss(self) -> None:
         for document in (self.skill, self.strategy, self.architecture, self.oss_handoff):
-            self.assertIn("批准", document)
-            self.assertIn("上传 OSS", document)
-        self.assertIn("批准本身只更新名单", self.skill)
+            self.assertIn("OSS", document)
+        self.assertIn("阶段 1 只交付当前 revision", self.skill)
+        self.assertIn("人工 `pass`", self.skill)
+        self.assertIn("立即进入阶段 3", self.skill)
+        self.assertIn("所有合格候选先编译审核包", self.strategy)
         self.assertIn("数量目标或“模板包”字样不能跳过审批", self.strategy)
-        self.assertIn("批准本身也不触发上传", self.oss_handoff)
+        self.assertIn("阶段 2 的人工 `pass` 让该 revision 进入阶段 3", self.oss_handoff)
 
     def test_exact_visual_revision_is_frozen_before_finalization(self) -> None:
         for marker in (
