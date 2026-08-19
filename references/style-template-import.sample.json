@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0",
+  "taxonomyVersion": "2.0",
+  "key": "high-gloss-chrome-rendering",
+  "title": "高光镜面塑形",
+  "description": "以高反射镜面、宽阔高光和圆润块面重绘输入内容",
+  "category": {
+    "primary": "material-3d",
+    "secondary": "chrome-inflatable-sculpture",
+    "displayName": "材质立体"
+  },
+  "displayCategory": "材质立体",
+  "referenceType": "single-style-reference",
+  "referenceStructure": "single-style-reference",
+  "supportedModes": ["whole_image", "subject_only"],
+  "contentScope": "adaptive",
+  "contentStrategy": "full_scene_preservation",
+  "modeInstructions": {
+    "whole_image": "保留整张输入画布的全部内容、文字、UI、布局与空间关系，并统一应用模板风格。",
+    "subject_only": "只提取并风格化主要主体，移除原背景和其他非主体内容，使用均匀纯白 #FFFFFF 背景。"
+  },
+  "referenceAssets": {
+    "style": "https://assets.example.com/dev/style/templates/00000000-0000-4000-8000-000000000000.png"
+  },
+  "styleInstruction": "内容权限：当前输入图是主体、物件、场景、文字、视角和构图的唯一来源；保持本次 mode 范围内的身份、数量、姿态、轮廓、遮挡和空间关系。成像媒介：把可见表面完整重建为高反射抛光铬材质，反射参与体积塑造。形体与细节：保留输入结构，使用圆润连续的曲面概括微小纹理。线条与边缘：外轮廓清晰，内部结构主要由反射边界和高光转折界定。笔触与纹理：表面光滑，无纸纹、颗粒和手绘笔触。色彩组织：以中性银灰为主，环境色只作为反射色带出现。明暗与空间：使用宽阔高光、深色反射带和柔和接触阴影建立体积，保持输入视角和布局。覆盖要求：主体、背景、文字、UI、边缘和角落统一执行镜面重建，不保留原始哑光表面或未处理照片区域。去摄影化：全部可见区域以目标媒介重新构成，原照片像素、摄影皮肤、真实毛发、镜头景深、原始镜头光照和照片噪声必须完全消失。",
+  "contentExclusion": "参考内容禁迁移清单：参考图中的具体气球、人物、道具、场景、服饰、姿势、文字、品牌、边框和装饰。以上内容不得出现在结果，也不得影响裁切、构图或主体重建；不要新增输入图不存在的物件或可读文字。",
+  "classificationConfidence": 0.94,
+  "needsReview": true
+}

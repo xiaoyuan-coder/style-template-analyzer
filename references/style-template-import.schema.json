@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/schemas/style-template-import.schema.json",
+  "title": "StyleTemplateImport",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "taxonomyVersion",
+    "key",
+    "title",
+    "description",
+    "category",
+    "referenceType",
+    "referenceStructure",
+    "supportedModes",
+    "contentScope",
+    "contentStrategy",
+    "referenceAssets",
+    "styleInstruction",
+    "contentExclusion",
+    "classificationConfidence",
+    "needsReview"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "taxonomyVersion": {"const": "2.0"},
+    "key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 60},
+    "description": {"type": "string", "minLength": 1, "maxLength": 240},
+    "category": {
+      "type": "object",
+      "required": ["primary", "secondary", "displayName"],
+      "properties": {
+        "primary": {
+          "enum": [
+            "hand-drawn-doodle",
+            "anime-comic",
+            "watercolor-painting",
+            "flat-graphic",
+            "print-halftone",
+            "pixel-art",
+            "material-3d",
+            "collage-experimental"
+          ]
+        },
+        "secondary": {"type": "string", "minLength": 1, "maxLength": 80},
+        "displayName": {"type": "string", "minLength": 1, "maxLength": 20}
+      },
+      "additionalProperties": false
+    },
+    "displayCategory": {"type": "string", "minLength": 1, "maxLength": 20},
+    "tags": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 30}, "uniqueItems": true},
+    "styleTags": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 30}, "uniqueItems": true},
+    "referenceType": {
+      "enum": [
+        "single-style-reference",
+        "paired-images",
+        "paired-comparison",
+        "annotated-paired-comparison"
+      ]
+    },
+    "referenceStructure": {"type": "string"},
+    "supportedModes": {
+      "type": "array",
+      "items": {"enum": ["whole_image", "subject_only"]},
+      "uniqueItems": true,
+      "maxItems": 2
+    },
+    "contentScope": {"enum": ["scene", "subject", "adaptive", "unavailable"]},
+    "contentStrategy": {
+      "enum": [
+        "full_scene_preservation",
+        "primary_subject_reconstruction",
+        "subject_cutout_stylization",
+        "salient_object_extraction"
+      ]
+    },
+    "modeInstructions": {
+      "type": "object",
+      "required": ["whole_image", "subject_only"],
+      "properties": {
+        "whole_image": {"type": "string", "minLength": 20, "maxLength": 1000},
+        "subject_only": {"type": "string", "minLength": 20, "maxLength": 1000}
+      },
+      "additionalProperties": false
+    },
+    "referenceAssets": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 1000}
+    },
+    "styleInstruction": {"type": "string", "minLength": 20, "maxLength": 4000},
+    "contentExclusion": {"type": "string", "minLength": 20, "maxLength": 2000},
+    "classificationConfidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "needsReview": {"type": "boolean"},
+    "qualityStatus": {"enum": ["usable", "unusable"]},
+    "testAssets": {
+      "type": "object",
+      "properties": {
+        "input": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "output": {"type": "string", "minLength": 1, "maxLength": 1000}
+      },
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 1000}
+    },
+    "styleEvaluation": {
+      "type": "object",
+      "required": ["score", "verdict", "hardFailures", "dimensionScores", "evidence"],
+      "properties": {
+        "score": {"type": "number", "minimum": 0, "maximum": 100},
+        "verdict": {"enum": ["pass", "fail"]},
+        "hardFailures": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 120},
+          "uniqueItems": true
+        },
+        "dimensionScores": {
+          "type": "object",
+          "required": [
+            "imagingMedium",
+            "marksAndTexture",
+            "colorOrganization",
+            "linesAndEdges",
+            "shapeAndDetail",
+            "toneAndSpace",
+            "globalCoverage"
+          ],
+          "properties": {
+            "imagingMedium": {"type": "number", "minimum": 0, "maximum": 20},
+            "marksAndTexture": {"type": "number", "minimum": 0, "maximum": 20},
+            "colorOrganization": {"type": "number", "minimum": 0, "maximum": 15},
+            "linesAndEdges": {"type": "number", "minimum": 0, "maximum": 15},
+            "shapeAndDetail": {"type": "number", "minimum": 0, "maximum": 10},
+            "toneAndSpace": {"type": "number", "minimum": 0, "maximum": 10},
+            "globalCoverage": {"type": "number", "minimum": 0, "maximum": 10}
+          },
+          "additionalProperties": false
+        },
+        "evidence": {"type": "string", "minLength": 20, "maxLength": 1000}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "required": ["qualityStatus"],
+        "properties": {"qualityStatus": {"const": "unusable"}}
+      },
+      "then": {
+        "properties": {"supportedModes": {"maxItems": 0}}
+      },
+      "else": {
+        "required": ["modeInstructions"],
+        "properties": {
+          "supportedModes": {
+            "minItems": 2,
+            "maxItems": 2,
+            "contains": {"const": "whole_image"}
+          },
+          "contentScope": {"const": "adaptive"},
+          "styleInstruction": {"minLength": 200},
+          "contentExclusion": {"minLength": 60}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["needsReview"],
+        "properties": {"needsReview": {"const": false}}
+      },
+      "then": {
+        "required": ["styleEvaluation"],
+        "properties": {
+          "styleEvaluation": {
+            "properties": {
+              "score": {"minimum": 90},
+              "verdict": {"const": "pass"},
+              "hardFailures": {"maxItems": 0}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

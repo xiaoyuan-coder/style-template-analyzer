@@ -1,0 +1,4 @@
+interface:
+  display_name: "风格化模板分析器"
+  short_description: "拆分参考内容与七维画风，生成全像素非摄影重绘模板并按 90 分验收"
+  default_prompt: "使用 $style-template-analyzer 分析参考图：输入图独占内容，参考图只提供七维风格指纹；所有模板执行全像素非摄影重绘，并按 90 分风格还原门槛验收。"
