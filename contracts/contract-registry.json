@@ -63,6 +63,11 @@
       "schemaVersion": "1.0.0",
       "businessFile": "source-package-receipt.json",
       "officialShape": false
+    },
+    "style_badcase_corpus": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "style-badcase-corpus.json",
+      "officialShape": false
     }
   },
   "legacyStages": {

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-badcase-corpus.schema.json",
+  "title": "StyleBadcaseCorpus",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "updatedAt", "count", "items"],
+  "properties": {
+    "artifactType": {"const": "style_badcase_corpus"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "updatedAt": {"type": "string", "format": "date-time"},
+    "count": {"type": "integer", "minimum": 0},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "badcaseId", "decision", "authority", "reasons", "sourceDecisionPath",
+          "batchRoot", "recordedAt"
+        ],
+        "properties": {
+          "badcaseId": {"type": "string", "pattern": "^style-bad-[a-f0-9]{16}$"},
+          "key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+          "title": {"type": "string", "minLength": 1},
+          "candidateIndex": {"type": "integer", "minimum": 1},
+          "decision": {"const": "reject"},
+          "authority": {"enum": ["user", "user_attached_selection", "legacy_user_exclusion"]},
+          "reasons": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "deliverySetId": {"type": "string", "minLength": 1},
+          "sourceDecisionPath": {"type": "string", "minLength": 1},
+          "batchRoot": {"type": "string", "minLength": 1},
+          "beforeImage": {"type": "string", "minLength": 1},
+          "afterImage": {"type": "string", "minLength": 1},
+          "afterImageSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "x": {"type": "string", "minLength": 1},
+          "y": {"type": "string", "minLength": 1},
+          "b": {"type": "string", "minLength": 1},
+          "c": {"type": "string", "minLength": 1},
+          "recordedAt": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

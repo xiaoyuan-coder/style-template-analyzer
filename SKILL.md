@@ -12,7 +12,7 @@ description: 把参考图编译为 prompt-only 风格模板最终包，或基于
 | 用户意图 | 动作 | 必读参考 |
 | --- | --- | --- |
 | 从参考图制作模板 | `compile` | `references/style-analysis-and-prompting.md`、`references/style-template-contract.md` |
-| 基于现有模板自主生产 | `produce` | `references/self-production-strategy.md`、`references/style-template-contract.md`、`references/architecture-and-lifecycle.md` |
+| 基于现有模板自主生产 | `produce` | `references/self-production-strategy.md`、`references/goodcase-after-aesthetics.md`、`references/badcase-learning.md`、`references/style-template-contract.md`、`references/architecture-and-lifecycle.md` |
 | 补充或审核真实摄影测试图 | `maintain-test-pool` | `references/test-image-pool.md`、`references/test-image-admission.md` |
 | 只看本地草稿与封面，暂不上传 | `compile/produce: preview` | `references/architecture-and-lifecycle.md` |
 | 对已有最终包做完整评测 | `evaluate` | `references/style-template-contract.md` |
@@ -35,13 +35,13 @@ description: 把参考图编译为 prompt-only 风格模板最终包，或基于
 
 ## `produce`：模板自生产
 
-1. 只读取 `references/approved-baseline.json` 指向的批准基线。当前批准集合为 94 个模板，摘要必须匹配。
-2. 用 `X 图形语言 × Y 空间语法 × B 内容绑定 × C 边界策略` 设计候选；四项都必须明确，X 与 Y 必须明显改变最终像素。材质默认只作辅助表现，不把工艺制作感作为印制模板的主要 X。
-3. 同批候选覆盖多个 Y 家族；先从灵感来源提取内容关系和空间机制，再发明适配当前输入的载体。沿用同一结构骨架换皮、复刻固定外壳或把普通背景当成 Y 均不形成新候选；CRT、街机和窗口只算一个界面结构家族。
-4. 在正式编译前直接生成效果图供用户评审。先过审美非退化门禁，再检查 Y、完整闭合与跨输入泛化，最后检查 X；文字示意不替代直接视觉结果。处理后的图必须至少维持原图的主体魅力、可读性和构图质量，花哨程度不构成通过理由。
+1. 读取 `references/approved-baseline.json` 指向的批准基线，并按 `references/badcase-learning.md` 读取总库 BadCase 语料库。当前批准集合为 94 个模板，摘要必须匹配。
+2. 用 `X 图形语言 × Y 空间语法 × B 内容绑定 × C 边界策略` 设计候选；四项都必须明确。按 `references/goodcase-after-aesthetics.md` 选择视觉统治轨或关系发明轨，并用 BadCase 拦截重复失败：视觉统治轨允许 Y 保持原构图，但 X 必须形成产品级像素签名；关系发明轨要求 Y 明显改变内容关系。材质默认只作辅助表现，不把工艺制作感作为印制模板的主要 X。
+3. 同批默认让关系发明轨占 60%–70%，视觉统治轨占 30%–40%，并覆盖多个 Y 家族。先从灵感来源提取内容关系和空间机制，再发明适配当前输入的载体。沿用同一结构骨架换皮、复刻固定外壳或把普通背景当成 Y 均不形成新候选；CRT、街机和窗口只算一个界面结构家族。
+4. 在正式编译前直接生成 before/after 配对供用户评审。以 after 最终观感为第一权威，按第一眼吸引力、来源价值保留、X 视觉统治力、Y 内容适配和印制闭合度评分；先过审美非退化门禁，再检查结构、完整闭合与泛化。文字示意和机制复杂度不替代直接视觉结果，新颖性不能救回难看的 after。
 5. 对重复、分镜、框/蒙版、变形和混合媒介执行结构有效性检查：重复或分镜必须带来信息增量；去掉框或蒙版后内容组织未改变时不算新 Y；复杂扭曲不得损伤识别与观感；允许混合媒介，但角色分工必须清楚，并通过来源联系、视觉桥接或空间互动建立关系，避免生硬并置。
 6. 按语义完整性检查裁切：独立 `artwork` 和 `emblem` 默认保留完整外轮廓与约 8%–12% 安全边距；分镜景别、满版构图和抽象关系带可以主动触边，只要载体逻辑清楚，主体身份、核心识别特征与关键关系仍可读。普通印制模板使用纯图案结构；外框、放大镜小窗、连接线和分析标注只在用户明确要求图鉴、档案、分析或说明书效果时启用。
-7. 保存批准项和淘汰项。附件选图以具体视觉 revision 为准；在全部首版、retry、replacement 和总览副本中做像素等价匹配，批准记录冻结 `index + key + selectedCover + selectedCoverSha256 + testAssetId`，同 key 的不同效果图不得折叠成一个未分版决定。
+7. 保存批准项和淘汰项。用户明确不通过的视觉 revision 同步写入 `style_badcase_corpus`，待审核、未表态和只有自动门禁结论的候选留在批次证据中。附件选图以具体视觉 revision 为准；在全部首版、retry、replacement 和总览副本中做像素等价匹配，批准记录冻结 `index + key + selectedCover + selectedCoverSha256 + testAssetId`，同 key 的不同效果图不得折叠成一个未分版决定。
 8. 批准前只交付候选效果，不编译正式包、不做测试图正式分配、不写 OSS；批准本身只更新名单。收到批准后的“产出通过的模板包”“完成 OSS 最终化”或“上传 OSS”等明确指令后，先生成批准专用编译规格。早期版、非总览版或被 retry 替换的版本需重新从选中图像核对 X/Y/B/C 和 prompt；封面图只作离线批准证据，运行时只消费冻结后的 prompt。
 9. 在正式分配前运行 `validate_approved_variants.py`，要求批准集合、精确封面 SHA、prompt SHA、测试图唯一性和最终化授权全部一致。再对 key、中文标题、prompt 机制签名和类别做新颖性检查，一次性检查 ready 测试图容量。
 10. 每个合格候选复用 `compile` 的唯一分配、封面生成和原子交付内核。测试图自身难看或干扰判断时立即更换，并退出当前 ready 选择。自生产只创建新候选，不改写、移动或归档基线。
@@ -101,6 +101,9 @@ python scripts/style_baseline.py <baseline-root> <snapshot.json> --approved-coun
 
 # 最终化前复核用户选中的精确视觉 revision 与批准专用 prompt
 python scripts/validate_approved_variants.py <approval-decision.json> <approved-compilation-spec.json>
+
+# 把用户明确拒绝的视觉 revision 幂等沉淀为 BadCase，并生成 after 缩略图索引
+python scripts/build_style_badcase_corpus.py --output <style-badcase-corpus.json> --contact-sheet-dir <contact-sheets-dir> <approval-decision.json> [...]
 
 # 维护测试图来源；联网采集独立于模板生产
 node scripts/style_source_adapter.mjs --source commons --category Product_photography --limit 20 --checkpoint <metadata-checkpoint.json> --chrome <chrome-path>

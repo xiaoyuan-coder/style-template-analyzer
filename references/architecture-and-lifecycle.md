@@ -5,11 +5,13 @@
 | 接口 | 输入 | 成功结果 |
 | --- | --- | --- |
 | `compile(reference)` | 参考图、compiler、ready 测试图池、持久 ledger、OSS adapter | 默认返回一个最终模板包；明确 preview 时返回待发布产物 |
-| `produce(baseline)` | 批准记录、candidate proposer、ready 测试图池、持久 ledger、OSS adapter | 批准前返回候选效果；批准后收到最终化指令才返回逐条最终模板包结果 |
+| `produce(baseline)` | 批准记录、GoodCase/BadCase 机制库、candidate proposer、ready 测试图池、持久 ledger、OSS adapter | 批准前返回候选效果并把用户拒绝项写入 BadCase；批准后收到最终化指令才返回逐条最终模板包结果 |
 | `evaluate(package)` | 已完成最终模板包与独立真图测试集 | 独立评测交接物 |
 | `maintain-test-pool` | 来源、查询、采集上限、checkpoint | 待门禁测试图记录 |
 
 `compile` 与 `produce` 是两个一等入口，共用测试图分配、封面生成、轻量封面检查、OSS 上传、正式 URL 回填、最终契约校验和原子发布内核。网页来源、生成器、OSS 和评测通过适配器接入。`compile` 的模板包请求包含 OSS 授权；`produce` 先停在候选视觉审批，数量目标或“模板包”字样不能跳过该门禁。批准只更新名单，批准后的“产出通过的模板包”“完成 OSS 最终化”或“上传 OSS”等指令才授权外部写入。
+
+用户视觉审批同时维护负向学习闭环：明确拒绝的具体 revision 写入总库 `style_badcase_corpus`，待审核和只有自动门禁结论的候选留在批次证据中。BadCase 独立于最终模板包与批准基线。
 
 ## 2. 生命周期
 
@@ -66,11 +68,12 @@ baseline → produce → candidate preview → explicit approval │
 | `style_v3_workflow.py` | compile/produce、轻量封面检查、OSS 最终化和评测事务编排 |
 | `validate_approved_variants.py` | 批准集合、精确视觉 revision、封面/prompt 双 SHA 和测试图唯一性门禁 |
 | `finalize_style_batch.mjs` | OSS dry-run、受控域名上传、正式 URL 回填与官方 JSON 输出适配 |
+| `build_style_badcase_corpus.py` | 从明确用户拒绝决策幂等构建 BadCase 语料库与 after 缩略图索引 |
 
 ## 6. 业务目录
 
 - 待发布产物与最终模板包：总库 `05-风格化模板生产` 下的明确批次目录，使用独立内部记录目录与严格两文件公开包目录。
-- 测试图池、完整评测与报告：总库 `06-模板质量评测`。
+- 测试图池、GoodCase/BadCase 语料库、完整评测与报告：总库 `06-模板质量评测`。
 - OSS 待导入、人工验收与上线记录：总库 `07-数据验收与上线`。
 - 仓库 `artifacts/` 只放自动测试和临时运行产物。
 

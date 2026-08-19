@@ -77,6 +77,11 @@ ARTIFACT_SPECS = {
         "schemaVersion": "1.0.0",
         "officialShape": False,
     },
+    "style_badcase_corpus": {
+        "filenames": set(),
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
 }
 
 LEGACY_STAGE_REQUIREMENTS = {

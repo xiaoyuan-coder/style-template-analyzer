@@ -23,6 +23,7 @@
 - manifest 使用 schema 3.0.0 与 stage `final-package`，内部必须登记 `cover-check-receipt.json` 和 `oss-finalization-receipt.json`。
 - 明确 preview 时使用 manifest 3.0.0 `prepublish`；同 revision 后续正式运行复用原测试图和本地封面。
 - evaluation 保持独立；v3 `oss-handoff` 只用于存量迁移。
+- v4.5 起，用户视觉审批把明确拒绝的 revision 写入独立 `style_badcase_corpus` 1.0.0；该语料库位于质量评测目录，不改变模板包和 manifest 3.0.0 的形状。
 
 ## 存量 `effect.png`
 

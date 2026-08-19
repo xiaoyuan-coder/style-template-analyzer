@@ -17,6 +17,8 @@ class SelfProductionStrategyTests(unittest.TestCase):
         cls.architecture = (cls.skill_root / "references/architecture-and-lifecycle.md").read_text(encoding="utf-8")
         cls.oss_handoff = (cls.skill_root / "references/oss-handoff.md").read_text(encoding="utf-8")
         cls.taxonomy = (cls.skill_root / "references/garment-print-template-taxonomy.md").read_text(encoding="utf-8")
+        cls.goodcases = (cls.skill_root / "references/goodcase-after-aesthetics.md").read_text(encoding="utf-8")
+        cls.badcases = (cls.skill_root / "references/badcase-learning.md").read_text(encoding="utf-8")
 
     def test_produce_routes_to_strategy_and_requires_mechanism_model(self) -> None:
         self.assertIn("references/self-production-strategy.md", self.skill)
@@ -76,13 +78,40 @@ class SelfProductionStrategyTests(unittest.TestCase):
         self.assertIn("首版、retry、replacement 和总览副本", self.strategy)
         self.assertIn("运行时图片数组仍只含用户上传图", self.strategy)
 
+    def test_after_first_goodcase_learning_drives_candidate_design(self) -> None:
+        self.assertIn("references/goodcase-after-aesthetics.md", self.skill)
+        for marker in (
+            "visual-authority", "relational-invention", "after 第一眼吸引力",
+            "来源价值保留", "X 视觉统治力", "Y 内容适配", "印制闭合度",
+            "sourceAdvantage", "60%–70%", "新颖性不能救回难看的 after",
+        ):
+            self.assertIn(marker, self.skill + self.strategy + self.goodcases)
+        for key in (
+            "transparent-watercolor-artwork", "three-act-flat-gouache",
+            "interlocking-dual-silhouette", "floating-shelf-depth",
+            "memebuy-crt-interface",
+        ):
+            self.assertIn(key, self.goodcases)
+
     def test_manifest_tracks_strategy_and_regression_test(self) -> None:
         manifest = json.loads((self.skill_root / "skill-manifest.json").read_text(encoding="utf-8"))
-        self.assertGreaterEqual(tuple(map(int, manifest["version"].split("."))), (4, 3, 0))
+        self.assertGreaterEqual(tuple(map(int, manifest["version"].split("."))), (4, 5, 0))
         self.assertIn("references/self-production-strategy.md", manifest["tracked_files"])
+        self.assertIn("references/goodcase-after-aesthetics.md", manifest["tracked_files"])
+        self.assertIn("references/badcase-learning.md", manifest["tracked_files"])
         self.assertIn("scripts/validate_approved_variants.py", manifest["tracked_files"])
+        self.assertIn("scripts/build_style_badcase_corpus.py", manifest["tracked_files"])
         self.assertIn("scripts/test_approved_variant_selection.py", manifest["tracked_files"])
+        self.assertIn("scripts/test_build_style_badcase_corpus.py", manifest["tracked_files"])
         self.assertIn("scripts/test_self_production_strategy.py", manifest["tracked_files"])
+
+    def test_explicit_user_rejections_feed_badcase_learning(self) -> None:
+        for marker in (
+            "style_badcase_corpus", "用户明确拒绝", "待审核", "未表态",
+            "具体视觉 revision", "幂等", "GoodCase", "BadCase",
+        ):
+            self.assertIn(marker, self.skill + self.strategy + self.architecture + self.badcases)
+        self.assertIn("scripts/build_style_badcase_corpus.py", self.skill + self.strategy + self.badcases)
 
 
 if __name__ == "__main__":
