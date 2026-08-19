@@ -135,6 +135,27 @@ class TestImagePoolTests(unittest.TestCase):
         with self.assertRaisesRegex(TestPoolError, "test_pool_insufficient"):
             pool.assign("delivery-1", "template-c", 1)
 
+    def test_active_assignment_is_globally_unique_across_delivery_sets(self) -> None:
+        pool = TestImagePool([
+            self.asset("asset-a", "a" * 64, "0" * 16),
+            self.asset("asset-b", "b" * 64, "f" * 16),
+        ])
+        first = pool.reserve("delivery-1", "template-a", 1)
+        second = pool.reserve("delivery-2", "template-b", 1)
+        self.assertNotEqual(first["assetId"], second["assetId"])
+        self.assertEqual(pool.capacity("delivery-3"), 0)
+
+    def test_distribution_reports_available_instead_of_raw_catalog_count(self) -> None:
+        pool = TestImagePool([
+            self.asset("asset-a", "a" * 64, "0" * 16),
+            self.asset("asset-b", "b" * 64, "f" * 16),
+        ])
+        pool.reserve("delivery-1", "template-a", 1)
+        distribution = pool.ready_distribution()
+        self.assertEqual(distribution["catalogReady"], 2)
+        self.assertEqual(distribution["ready"], 1)
+        self.assertEqual(distribution["occupied"], 1)
+
     def test_reassigning_same_template_requires_new_revision(self) -> None:
         pool = TestImagePool([
             self.asset("asset-a", "a" * 64, "0" * 16),

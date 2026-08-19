@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "3.0.0",
-  "supportedMajors": [1, 2, 3],
+  "schemaVersion": "4.0.0",
+  "supportedMajors": [1, 2, 3, 4],
   "producer": "style-template-analyzer",
   "packageArtifactType": "style_template_package",
   "artifactTypes": {
@@ -30,7 +30,7 @@
       "officialShape": false
     },
     "test_image_assignment": {
-      "schemaVersion": "1.0.0",
+      "schemaVersion": "2.0.0",
       "businessFile": "test-image-assignment.json",
       "officialShape": false
     },
@@ -42,6 +42,11 @@
     "cover_check_receipt": {
       "schemaVersion": "1.0.0",
       "businessFile": "cover-check-receipt.json",
+      "officialShape": false
+    },
+    "approval_decision_receipt": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "approval-decision-receipt.json",
       "officialShape": false
     },
     "oss_finalization_receipt": {
@@ -83,6 +88,11 @@
   "v4Stages": {
     "prepublish": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt"],
     "final-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt", "oss_finalization_receipt"],
+    "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"]
+  },
+  "v5Stages": {
+    "review-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt"],
+    "final-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt", "approval_decision_receipt", "oss_finalization_receipt"],
     "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"]
   },
   "legacyPayloadVersions": {

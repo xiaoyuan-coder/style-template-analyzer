@@ -4,21 +4,24 @@
 
 ## 目标
 
-封面图用于展示模板应用效果。每个模板 revision 在当前交付集合中使用唯一真实摄影输入，使封面在主体、场景和画幅上保持差异。
+封面图用于展示模板应用效果。所有批次共享一份全局分配 ledger；任何正在预留、等待人工验收或已消费的真实摄影图都不得分配给另一个 revision。
 
 ## 状态
 
 ```text
-collected → manual_review → ready → reserved → publishing → committed
-                     ↘ rejected
+collected → manual_review → ready → reserved → awaiting_approval → released
+                     ↘ rejected                              └→ consumed
 ```
 
 - `collected`：已取得网页证据，尚未完成门禁。
 - `manual_review`：许可证、人物权利或品牌风险需要人工判断。
-- `ready`：允许进入封面分配。
-- `reserved`：当前事务临时占用。
-- `publishing`：待发布产物或 OSS 最终化模板包已通过对应校验，正处于原子 rename 与 ledger 提交之间。
-- `committed`：preview 待发布产物或最终模板包已经原子发布，测试图永久绑定该 revision。
+- `ready`：权利与视觉准入通过，且 ledger 中没有活跃或已消费占用时可分配。
+- `reserved`：审核包生成事务临时占用。技术失败发生在人工审核前时，系统可释放。
+- `awaiting_approval`：审核包已发布，等待人工对具体视觉 revision 表态。该状态持续占用，无自动超时。
+- `released`：人工驳回或明确释放；该 asset 重新进入全局可用容量。
+- `consumed`：人工验收通过，且封面/prompt 双 SHA 已冻结；该 asset 永久退出可用容量。
+
+`ready` 数量指当前可实际分配数。`catalogReady` 指权利与视觉准入通过的原始目录数，可以大于 `ready`。`legacyHeld` 表示尚未补齐人工决策证据的 v1 存量占用。
 
 ## ready 门禁
 
@@ -65,10 +68,12 @@ Pexels License 只对 `pexels-sitemap-manual` 中完成逐图视觉审核、作�
 - 采集是独立维护任务，禁止在 compile/produce 热路径执行。
 - 设置查询、最大条数、请求间隔和 checkpoint。
 - 下载后计算真实文件 SHA-256 与感知哈希，再进入池。
-- pool 与 assignment ledger 更新应使用文件锁和原子替换；同一 delivery set 内 `assetId` 唯一。
+- pool 与 assignment ledger 更新使用文件锁和原子替换；活跃/已消费 `assetId` 在全局 ledger 唯一。
+- 人工验收后的测试图状态只由 `pass/reject/manual_release` 驱动。任务结束、待定时长和 OSS 结果不触发释放。
 - ready 容量小于待生成模板数时，在任何生成器调用前停止。
 
 ```bash
+python scripts/audit_style_test_pool.py <pool.json> <assignment-ledger.json>
 node scripts/style_source_adapter.mjs --source commons --category Product_photography --limit 20 --checkpoint <metadata-checkpoint.json> --chrome <chrome-path>
 python scripts/style_institutional_source.py --source smithsonian --limit 250 --checkpoint <smithsonian-metadata.json>
 python scripts/style_institutional_source.py --source loc --limit 150 --checkpoint <loc-metadata.json>

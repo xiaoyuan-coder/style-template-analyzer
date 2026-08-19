@@ -16,12 +16,12 @@
   ],
   "properties": {
     "artifactType": {"const": "style_template_package"},
-    "schemaVersion": {"enum": ["1.0.0", "2.0.0", "3.0.0"]},
+    "schemaVersion": {"enum": ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]},
     "producer": {"const": "style-template-analyzer"},
     "status": {"enum": ["completed", "needs_input", "blocked", "failed"]},
     "revision": {"type": "integer", "minimum": 1},
     "contractStatus": {"enum": ["verified", "unverified", "blocked"]},
-    "stage": {"enum": ["authoring", "evaluation", "handoff", "package", "oss-handoff", "prepublish", "final-package"]},
+    "stage": {"enum": ["authoring", "evaluation", "handoff", "package", "oss-handoff", "prepublish", "review-package", "final-package"]},
     "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
     "artifacts": {
       "type": "array",
@@ -33,7 +33,7 @@
         "properties": {
           "path": {"type": "string", "minLength": 1},
           "artifactType": {
-            "enum": ["style_analysis", "style_template", "style_evaluation", "style_handoff", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt", "oss_finalization_receipt", "baseline_snapshot", "self_production_analysis", "source_package_receipt"]
+            "enum": ["style_analysis", "style_template", "style_evaluation", "style_handoff", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt", "approval_decision_receipt", "oss_finalization_receipt", "baseline_snapshot", "self_production_analysis", "source_package_receipt"]
           },
           "schemaVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
           "officialShape": {"type": "boolean"},

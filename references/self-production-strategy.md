@@ -94,12 +94,12 @@
 - 同一 key 出现多张效果图时，每张图是独立的视觉 revision。总览选中状态、文件名顺序和候选 key 均不能代替像素匹配。
 - 用 `scripts/build_style_badcase_corpus.py` 幂等更新总库 BadCase 语料库。只收录用户明确拒绝的 revision；待审核、未表态、生成失败和只有自动门禁结论的候选继续保留为批次证据。
 - 批准前只交付候选效果；数量目标或“模板包”字样不能跳过审批。
-- 只编译批准项；淘汰项不进入模板包、测试图正式分配或 OSS 最终化。
-- 批准只更新批准名单，不自动触发外部写入。收到批准后的“产出通过的模板包”“完成 OSS 最终化”或“上传 OSS”等明确指令后再执行正式编译和 OSS 最终化。
+- 所有合格候选先编译审核包并预留唯一测试图；淘汰项根据人工 `reject` 释放测试图，不进入 OSS 最终化。
+- 人工 `pass` 同时冻结批准名单、封面 SHA 和 prompt SHA，该 revision 立即进入 OSS 最终化；`pending` 持续占用当前测试图。
 - 用户纠正设计判断时，用新 approval revision 覆盖当前决策，保留旧轮次作为历史证据。
 - 收到最终化授权后生成批准专用编译规格。对总览外候选、被 retry 替换的首版和同 key 共享规格的不同视觉 revision，重新核对选中图的 X/Y/B/C。当选中版与共享规格的视觉机制有差异时，写入版本专属编译覆盖，并记录 `selectedVariant`、`variantNote`、新 prompt 和 prompt SHA。
 - 编译时把冻结后的 X、Y、B、C 和越权边界写进 `promptTemplate`。审批图只是离线设计证据，运行时图片数组仍只含用户上传图。
-- 在测试图正式分配和 OSS 之前运行 `scripts/validate_approved_variants.py`。通过条件是：批准数量和 key 集合一致；每个 `selectedCover` 与批准记录及实际 SHA 一致；每个 prompt 与 prompt SHA 一致；`testAssetId` 在当前交付集内唯一；最终化授权已明确记录。
+- 在 OSS 之前运行 `scripts/validate_approved_variants.py`。通过条件是：批准数量和 key 集合一致；每个 `selectedCover` 与审核包及实际 SHA 一致；每个 prompt 与 prompt SHA 一致；`testAssetId` 在全局 ledger 中唯一；人工 `pass` 回执完整。
 - 最终包继续执行基线新颖性、唯一测试图、OSS 回填和严格双文件校验。
 
 ## 8. 候选审计清单

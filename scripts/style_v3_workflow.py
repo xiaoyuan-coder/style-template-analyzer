@@ -196,9 +196,9 @@ def _deliver_fast_package_locked(
     revision_root.parent.mkdir(parents=True, exist_ok=True)
     try:
         assignment = (
-            pool.reserve_persisted(delivery_set_id, key, revision, ledger_file)
+            pool.reserve_persisted(delivery_set_id, key, revision, ledger_file, legacy=True)
             if ledger_file is not None
-            else pool.reserve(delivery_set_id, key, revision)
+            else pool.reserve(delivery_set_id, key, revision, legacy=True)
         )
     except TestPoolError as error:
         raise WorkflowError(str(error)) from error
@@ -495,9 +495,9 @@ def _deliver_v4_locked(
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         assignment = (
-            pool.reserve_persisted(delivery_set_id, key, revision, ledger_file)
+            pool.reserve_persisted(delivery_set_id, key, revision, ledger_file, legacy=True)
             if ledger_file is not None
-            else pool.reserve(delivery_set_id, key, revision)
+            else pool.reserve(delivery_set_id, key, revision, legacy=True)
         )
     except TestPoolError as error:
         raise WorkflowError(str(error)) from error

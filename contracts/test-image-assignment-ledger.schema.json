@@ -1,17 +1,79 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://memebuy.local/contracts/style-test-image-assignment-ledger.schema.json",
-  "title": "StyleTestImageAssignmentLedger",
+  "title": "StyleTestImageAssignmentLedgerV2",
   "type": "object",
   "additionalProperties": false,
   "required": ["artifactType", "schemaVersion", "producer", "assignments"],
   "properties": {
     "artifactType": {"const": "test_image_assignment_ledger"},
-    "schemaVersion": {"const": "1.0.0"},
+    "schemaVersion": {"enum": ["1.0.0", "2.0.0"]},
     "producer": {"const": "style-template-analyzer"},
     "assignments": {
       "type": "array",
-      "items": {"$ref": "test-image-assignment.schema.json"}
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/legacyAssignment"},
+          {"$ref": "#/$defs/currentAssignment"}
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["artifactType", "schemaVersion", "producer", "deliverySetId", "templateKey", "revision", "assetId", "assignedAt", "status"],
+      "properties": {
+        "artifactType": {"const": "test_image_assignment"},
+        "producer": {"const": "style-template-analyzer"},
+        "deliverySetId": {"type": "string", "minLength": 1},
+        "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+        "revision": {"type": "integer", "minimum": 1},
+        "assetId": {"type": "string", "minLength": 1},
+        "assignedAt": {"type": "string", "minLength": 1}
+      }
+    },
+    "legacyAssignment": {
+      "allOf": [
+        {"$ref": "#/$defs/identity"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "artifactType": true,
+            "schemaVersion": {"const": "1.0.0"},
+            "producer": true,
+            "deliverySetId": true,
+            "templateKey": true,
+            "revision": true,
+            "assetId": true,
+            "assignedAt": true,
+            "status": {"enum": ["reserved", "publishing", "committed"]}
+          }
+        }
+      ]
+    },
+    "currentAssignment": {
+      "allOf": [
+        {"$ref": "#/$defs/identity"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "artifactType": true,
+            "schemaVersion": {"const": "2.0.0"},
+            "producer": true,
+            "deliverySetId": true,
+            "templateKey": true,
+            "revision": true,
+            "assetId": true,
+            "assignedAt": true,
+            "status": {"enum": ["reserved", "awaiting_approval", "released", "consumed"]},
+            "reviewReadyAt": {"type": "string", "minLength": 1},
+            "decision": {"type": "object"}
+          }
+        }
+      ]
     }
   }
 }
