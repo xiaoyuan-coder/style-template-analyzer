@@ -1,0 +1,17 @@
+{
+  "name": "style-template-analyzer",
+  "version": "4.5.0",
+  "private": true,
+  "packageManager": "pnpm@10.8.0",
+  "scripts": {
+    "test": "python -m unittest discover -s scripts -p 'test_*.py' && node --test scripts/test_finalize_style_batch.mjs scripts/test_style_source_adapter.mjs",
+    "test:python": "python -m unittest discover -s scripts -p 'test_*.py'",
+    "test:node": "node --test scripts/test_finalize_style_batch.mjs scripts/test_style_source_adapter.mjs",
+    "validate": "python scripts/validate_style_package.py",
+    "finalize": "node scripts/finalize_style_batch.mjs"
+  },
+  "dependencies": {
+    "ali-oss": "^6.23.0",
+    "playwright-core": "1.62.1"
+  }
+}
