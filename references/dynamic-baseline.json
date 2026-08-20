@@ -1,0 +1,9 @@
+{
+  "artifactType": "style_dynamic_baseline_pointer",
+  "schemaVersion": "1.0.0",
+  "producer": "style-template-analyzer",
+  "catalog": "../../../05-风格化模板生产/04-研发交付/已通过正式模板包/统一通过模板索引.json",
+  "promotionTrigger": "human-pass",
+  "selectionPolicy": "latest-passed-revision-per-key",
+  "note": "每次人工 pass 自动进入基线；同 key 只激活 revision 最大的通过版本，历史 revision 保留追溯。"
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-experience-snapshot.schema.json",
+  "title": "StyleExperienceSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "generatedAt", "corpusSha256", "caseCount", "goodcaseCount", "badcaseCount", "activeGoodcaseKeys"],
+  "properties": {
+    "artifactType": {"const": "style_experience_snapshot"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "corpusSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "caseCount": {"type": "integer", "minimum": 0},
+    "goodcaseCount": {"type": "integer", "minimum": 0},
+    "badcaseCount": {"type": "integer", "minimum": 0},
+    "activeGoodcaseKeys": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"}}
+  }
+}

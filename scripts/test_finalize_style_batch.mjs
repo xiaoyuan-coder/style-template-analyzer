@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   finalizeStyleBatch,
   isManagedRemoteUrl,
+  loadEnvChain,
   loadOssConfig,
   preflightStyleBatch,
 } from "./finalize_style_batch.mjs";
@@ -86,6 +87,28 @@ test("validates OSS configuration without exposing secrets", () => {
     ALIYUN_OSS_ASSETS_ENDPOINT: "https://oss.example.com",
     ALIYUN_OSS_ASSETS_DOMAIN: "assets.example.com",
   }), /纯 hostname/);
+});
+
+test("loads OSS variables from a parent .env without overriding process values", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "style-env-chain-"));
+  try {
+    const nested = path.join(root, "business", "batch");
+    await mkdir(nested, { recursive: true });
+    await writeFile(path.join(root, ".env"), [
+      "ALIYUN_OSS_ACCESS_KEY_ID=parent-ak",
+      "ALIYUN_OSS_ACCESS_KEY_SECRET=parent-sk",
+      "ALIYUN_OSS_ASSETS_BUCKET=parent-bucket",
+      "ALIYUN_OSS_ASSETS_ENDPOINT=oss-cn-shanghai.aliyuncs.com",
+      "ALIYUN_OSS_ASSETS_DOMAIN=assets.example.com",
+      "",
+    ].join("\n"));
+    const env = await loadEnvChain(nested, { ALIYUN_OSS_ACCESS_KEY_ID: "runtime-ak" });
+    const config = loadOssConfig(env);
+    assert.equal(config.accessKeyId, "runtime-ak");
+    assert.equal(config.bucket, "parent-bucket");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("dry-run reports the single cover asset", async () => {

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/dynamic-baseline-registration-receipt.schema.json",
+  "title": "DynamicBaselineRegistrationReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "templateKey", "revision", "registeredAt", "catalog", "catalogDigest", "activeRevision", "sinkReceipt"],
+  "properties": {
+    "artifactType": {"const": "dynamic_baseline_registration_receipt"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "registeredAt": {"type": "string", "format": "date-time"},
+    "catalog": {"type": "string", "minLength": 1},
+    "catalogDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "activeRevision": {"type": "integer", "minimum": 1},
+    "sinkReceipt": {"type": "object"}
+  }
+}

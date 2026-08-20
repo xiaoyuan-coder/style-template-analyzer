@@ -18,6 +18,7 @@ from style_review_workflow import (
     record_review_decision,
     route_workflow,
 )
+from test_style_reference_gate import interpretation, visual_gate
 from style_test_pool import TestImagePool, TestPoolError, normalize_asset
 from test_validate_style_analysis import analysis
 from test_validate_style_template import template
@@ -91,6 +92,22 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         self.reference = self.root / "reference.jpg"
         self.reference.write_bytes(b"fixture")
         self.generator = Generator()
+        self.experience_events: list[dict] = []
+        self.baseline_events: list[dict] = []
+
+    def experience_sink(self, event: dict) -> dict:
+        self.experience_events.append(event)
+        return {"eventId": f"event-{len(self.experience_events)}"}
+
+    def baseline_sink(self, event: dict) -> dict:
+        self.baseline_events.append(event)
+        return {
+            "catalog": (self.root / "dynamic-baseline.json").as_posix(),
+            "catalogDigest": "c" * 64,
+            "activeRevision": event["decision"]["revision"],
+            "baselineCount": len(self.baseline_events),
+            "idempotent": False,
+        }
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -100,7 +117,16 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         data = template()
         evidence = analysis()
         evidence["templateKey"] = data["key"]
-        return {"template": data, "analysis": evidence}
+        semantics = interpretation()
+        semantics["templateKey"] = data["key"]
+        semantics["sourceImages"][0]["sha256"] = hashlib.sha256(reference.read_bytes()).hexdigest()
+        return {"template": data, "analysis": evidence, "referenceInterpretation": semantics}
+
+    @staticmethod
+    def visual_checker(output: Path, template_data: dict, interpretation_data: dict, attempt: int) -> dict:
+        result = visual_gate()
+        result["templateKey"] = template_data["key"]
+        return result
 
     def create_review(self, *, delivery: str = "delivery-1", revision: int = 1) -> dict:
         return compile_reference(
@@ -112,6 +138,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             delivery_set_id=delivery,
             ledger_file=self.ledger,
             revision=revision,
+            reference_visual_checker=self.visual_checker,
         )
 
     def test_phase_one_creates_review_package_without_oss_and_holds_asset(self) -> None:
@@ -127,6 +154,10 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         self.assertEqual(self.pool.capacity("another-delivery"), 1)
         errors, _ = validate_package(review_root, "review-package", "local", "", "")
         self.assertEqual(errors, [])
+        manifest = json.loads((review_root / "artifact-manifest.json").read_text(encoding="utf-8"))
+        assignment_record = next(item for item in manifest["artifacts"] if item["artifactType"] == "test_image_assignment")
+        self.assertEqual(manifest["schemaVersion"], "5.1.0")
+        self.assertEqual(assignment_record["schemaVersion"], "2.0.0")
 
     def test_pending_requires_explicit_human_release(self) -> None:
         review = self.create_review()
@@ -136,6 +167,8 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             "还需要比较另一版",
             self.pool,
             self.ledger,
+            experience_sink=self.experience_sink,
+            baseline_sink=self.baseline_sink,
         )
         self.assertEqual(result["status"], "awaiting_approval")
         self.assertEqual(self.pool.capacity("another-delivery"), 1)
@@ -155,6 +188,8 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             "人工确认本轮先释放测试图",
             self.pool,
             self.ledger,
+            experience_sink=self.experience_sink,
+            baseline_sink=self.baseline_sink,
         )
         self.assertEqual(released["status"], "released")
         self.assertEqual(self.pool.capacity("another-delivery"), 2)
@@ -167,6 +202,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             "效果未达到验收标准",
             self.pool,
             self.ledger,
+            experience_sink=self.experience_sink,
         )
         self.assertEqual(result["status"], "released")
         self.assertEqual(self.pool.capacity("delivery-2"), 2)
@@ -181,9 +217,13 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             "人工验收通过",
             self.pool,
             self.ledger,
+            experience_sink=self.experience_sink,
+            baseline_sink=self.baseline_sink,
         )
         self.assertEqual(decision["status"], "approved")
         self.assertEqual(self.pool.capacity("delivery-2"), 1)
+        self.assertTrue((Path(review["reviewRoot"]) / "internal" / "experience-deposit-receipt.json").is_file())
+        self.assertTrue((Path(review["reviewRoot"]) / "internal" / "dynamic-baseline-registration-receipt.json").is_file())
 
         failing = Oss(fail=True)
         with self.assertRaisesRegex(ReviewWorkflowError, "oss_finalization_failed"):
@@ -216,22 +256,75 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         self.assertTrue(again["idempotent"])
         self.assertEqual(oss.calls, 1)
 
-    def test_experience_deposit_failure_does_not_block_main_flow(self) -> None:
+    def test_experience_deposit_failure_blocks_completion_and_can_retry(self) -> None:
         review = self.create_review()
 
         def broken_sink(event: dict) -> None:
             raise RuntimeError("offline")
 
-        result = record_review_decision(
+        with self.assertRaisesRegex(ReviewWorkflowError, "experience_deposit_failed"):
+            record_review_decision(
+                Path(review["reviewRoot"]),
+                "pass",
+                "人工验收通过",
+                self.pool,
+                self.ledger,
+                experience_sink=broken_sink,
+                baseline_sink=self.baseline_sink,
+            )
+        with self.assertRaisesRegex(ReviewWorkflowError, "experience_deposit_required"):
+            finalize_approved(
+                Path(review["reviewRoot"]),
+                self.root / "runs",
+                Oss(),
+                assets_domain="assets.example.com",
+            )
+        retried = record_review_decision(
             Path(review["reviewRoot"]),
             "pass",
             "人工验收通过",
             self.pool,
             self.ledger,
-            experience_sink=broken_sink,
+            experience_sink=self.experience_sink,
+            baseline_sink=self.baseline_sink,
         )
-        self.assertEqual(result["status"], "approved")
-        self.assertEqual(result["warnings"], ["experience_deposit_failed: offline"])
+        self.assertTrue(retried["idempotent"])
+        self.assertTrue((Path(review["reviewRoot"]) / "internal" / "experience-deposit-receipt.json").is_file())
+
+    def test_dynamic_baseline_failure_blocks_finalization_and_can_retry(self) -> None:
+        review = self.create_review()
+
+        def broken_baseline(event: dict) -> dict:
+            raise RuntimeError("catalog offline")
+
+        with self.assertRaisesRegex(ReviewWorkflowError, "dynamic_baseline_registration_failed"):
+            record_review_decision(
+                Path(review["reviewRoot"]),
+                "pass",
+                "人工验收通过",
+                self.pool,
+                self.ledger,
+                experience_sink=self.experience_sink,
+                baseline_sink=broken_baseline,
+            )
+        with self.assertRaisesRegex(ReviewWorkflowError, "dynamic_baseline_registration_required"):
+            finalize_approved(
+                Path(review["reviewRoot"]),
+                self.root / "runs",
+                Oss(),
+                assets_domain="assets.example.com",
+            )
+        retried = record_review_decision(
+            Path(review["reviewRoot"]),
+            "pass",
+            "人工验收通过",
+            self.pool,
+            self.ledger,
+            experience_sink=self.experience_sink,
+            baseline_sink=self.baseline_sink,
+        )
+        self.assertTrue(retried["idempotent"])
+        self.assertTrue((Path(review["reviewRoot"]) / "internal" / "dynamic-baseline-registration-receipt.json").is_file())
 
     def test_technical_failure_releases_before_review_and_same_revision_can_retry(self) -> None:
         class FailingGenerator:
@@ -247,12 +340,52 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
                 run_root=self.root / "runs",
                 delivery_set_id="delivery-1",
                 ledger_file=self.ledger,
+                reference_visual_checker=self.visual_checker,
             )
         ledger = json.loads(self.ledger.read_text(encoding="utf-8"))
         self.assertEqual(ledger["assignments"][0]["status"], "released")
         self.assertEqual(ledger["assignments"][0]["decision"]["verdict"], "system_failure")
         retried = self.create_review()
         self.assertEqual(retried["status"], "awaiting_approval")
+
+    def test_reference_semantics_failure_happens_before_asset_reservation(self) -> None:
+        def ambiguous(reference: Path) -> dict:
+            result = self.compiler(reference)
+            result["referenceInterpretation"]["ambiguities"] = ["无法判断标题是否属于风格"]
+            return result
+
+        with self.assertRaisesRegex(ReviewWorkflowError, "reference_interpretation_failed"):
+            compile_reference(
+                self.reference,
+                ambiguous,
+                self.pool,
+                self.generator,
+                run_root=self.root / "runs",
+                delivery_set_id="delivery-1",
+                ledger_file=self.ledger,
+                reference_visual_checker=self.visual_checker,
+            )
+        self.assertFalse(self.ledger.exists())
+
+    def test_independent_visual_gate_blocks_review_package_and_releases_asset(self) -> None:
+        def self_review(output: Path, template_data: dict, interpretation_data: dict, attempt: int) -> dict:
+            result = self.visual_checker(output, template_data, interpretation_data, attempt)
+            result["reviewer"] = interpretation_data["producer"]
+            return result
+
+        with self.assertRaisesRegex(ReviewWorkflowError, "reference_visual_gate_invalid"):
+            compile_reference(
+                self.reference,
+                self.compiler,
+                self.pool,
+                self.generator,
+                run_root=self.root / "runs",
+                delivery_set_id="delivery-1",
+                ledger_file=self.ledger,
+                reference_visual_checker=self_review,
+            )
+        ledger = json.loads(self.ledger.read_text(encoding="utf-8"))
+        self.assertEqual(ledger["assignments"][0]["status"], "released")
 
     def test_router_can_enter_finalization_immediately_after_pass(self) -> None:
         review = self.create_review()
@@ -265,6 +398,8 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             reason="人工验收通过",
             pool=self.pool,
             ledger_file=self.ledger,
+            experience_sink=self.experience_sink,
+            baseline_sink=self.baseline_sink,
             finalize_on_pass={
                 "run_root": self.root / "runs",
                 "oss_adapter": oss,

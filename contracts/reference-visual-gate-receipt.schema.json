@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/reference-visual-gate-receipt.schema.json",
+  "title": "ReferenceVisualGateReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactType",
+    "schemaVersion",
+    "producer",
+    "templateKey",
+    "revision",
+    "attempt",
+    "reviewer",
+    "independenceDeclaration",
+    "referenceInterpretationSha256",
+    "coverSha256",
+    "verdict",
+    "scores",
+    "evidence",
+    "hardFailures"
+  ],
+  "properties": {
+    "artifactType": {"const": "reference_visual_gate_receipt"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "attempt": {"type": "integer", "minimum": 1, "maximum": 2},
+    "reviewer": {"type": "string", "minLength": 1},
+    "independenceDeclaration": {"const": "reviewer-did-not-author-analysis-or-prompt"},
+    "referenceInterpretationSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "coverSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "verdict": {"enum": ["pass", "retry"]},
+    "scores": {"$ref": "#/$defs/dimensions"},
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imagingMedium", "shapeAndDetail", "linesAndEdges", "marksAndTexture", "colorOrganization", "compositionAndSpace"],
+      "properties": {
+        "imagingMedium": {"type": "string", "minLength": 1},
+        "shapeAndDetail": {"type": "string", "minLength": 1},
+        "linesAndEdges": {"type": "string", "minLength": 1},
+        "marksAndTexture": {"type": "string", "minLength": 1},
+        "colorOrganization": {"type": "string", "minLength": 1},
+        "compositionAndSpace": {"type": "string", "minLength": 1}
+      }
+    },
+    "hardFailures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["copied-before-after-layout", "copied-title-or-caption", "copied-color-bar", "copied-registration-mark", "subject-identity-lost", "reference-effect-missed"]}
+    }
+  },
+  "$defs": {
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imagingMedium", "shapeAndDetail", "linesAndEdges", "marksAndTexture", "colorOrganization", "compositionAndSpace"],
+      "properties": {
+        "imagingMedium": {"type": "integer", "minimum": 0, "maximum": 100},
+        "shapeAndDetail": {"type": "integer", "minimum": 0, "maximum": 100},
+        "linesAndEdges": {"type": "integer", "minimum": 0, "maximum": 100},
+        "marksAndTexture": {"type": "integer", "minimum": 0, "maximum": 100},
+        "colorOrganization": {"type": "integer", "minimum": 0, "maximum": 100},
+        "compositionAndSpace": {"type": "integer", "minimum": 0, "maximum": 100}
+      }
+    }
+  }
+}

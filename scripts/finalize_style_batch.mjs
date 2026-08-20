@@ -2,7 +2,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { access, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -60,6 +60,50 @@ export function loadOssConfig(env = process.env) {
     domain: normalizeHost(env.ALIYUN_OSS_ASSETS_DOMAIN, "ALIYUN_OSS_ASSETS_DOMAIN"),
     prefix: normalizePrefix(env.ALIYUN_OSS_KEY_PREFIX),
   };
+}
+
+function parseDotEnv(source) {
+  const values = {};
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!match) continue;
+    let value = match[2].trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    } else {
+      value = value.replace(/\s+#.*$/, "").trim();
+    }
+    values[match[1]] = value;
+  }
+  return values;
+}
+
+export async function loadEnvChain(startPath, baseEnv = process.env) {
+  const resolved = path.resolve(startPath);
+  let current;
+  try {
+    current = (await stat(resolved)).isDirectory() ? resolved : path.dirname(resolved);
+  } catch {
+    current = path.dirname(resolved);
+  }
+  const directories = [];
+  while (true) {
+    directories.push(current);
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  let loaded = {};
+  for (const directory of directories) {
+    const file = path.join(directory, ".env");
+    if (await exists(file)) {
+      loaded = parseDotEnv(await readFile(file, "utf8"));
+      break;
+    }
+  }
+  return { ...loaded, ...baseEnv };
 }
 
 export function isManagedRemoteUrl(value, config) {
@@ -261,7 +305,7 @@ export async function finalizeStyleBatch(options) {
   const input = path.resolve(options.input);
   const outputDir = path.resolve(options.output);
   const progressFile = options.progressFile ? path.resolve(options.progressFile) : undefined;
-  const config = options.config ?? loadOssConfig();
+  const config = options.config ?? loadOssConfig(await loadEnvChain(input));
   const validateFile = options.validateFile ?? defaultValidate;
   const files = await collectTemplateFiles(input);
   if (!files.length) fail(`未找到 style-template.json：${input}`);

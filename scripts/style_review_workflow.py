@@ -17,6 +17,9 @@ from PIL import Image
 
 from style_baseline import verify_approval_descriptor
 from style_contracts import build_manifest, read_json, sha256_file
+from style_dynamic_baseline import DynamicBaselineCatalog, DynamicBaselineError
+from style_experience_store import DurableExperienceStore, ExperienceStoreError
+from style_reference_gate import validate_reference_interpretation, validate_visual_gate
 from style_test_pool import TestImagePool, TestPoolError
 from validate_style_analysis import validate_data as validate_analysis
 from validate_style_package import validate_package
@@ -91,7 +94,12 @@ def _generate_cover(
     output: Path,
     generator: Callable[[dict[str, Any], dict[str, Any], Path], dict[str, Any]],
     checker: Callable[[Path, dict[str, Any], int], dict[str, Any]] | None,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    *,
+    reference_interpretation: dict[str, Any] | None = None,
+    reference_interpretation_file: Path | None = None,
+    reference_visual_checker: Callable[[Path, dict[str, Any], dict[str, Any], int], dict[str, Any]] | None = None,
+    revision: int = 1,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None]:
     attempts: list[dict[str, Any]] = []
     for attempt in (1, 2):
         try:
@@ -108,9 +116,45 @@ def _generate_cover(
         if not isinstance(reasons, list) or any(not isinstance(reason, str) or not reason for reason in reasons):
             raise ReviewWorkflowError("cover_check_invalid")
         attempts.append({"attempt": attempt, "verdict": decision["verdict"], "reasons": reasons})
-        if decision["verdict"] == "pass":
-            return receipt, attempts
-    raise ReviewWorkflowError("cover_check_failed")
+        if decision["verdict"] != "pass":
+            continue
+        if reference_interpretation is None:
+            return receipt, attempts, None
+        if reference_visual_checker is None or reference_interpretation_file is None:
+            raise ReviewWorkflowError("reference_visual_checker_required")
+        try:
+            visual = reference_visual_checker(output, template_data, reference_interpretation, attempt)
+        except Exception as error:
+            raise ReviewWorkflowError(f"reference_visual_gate_failed: {error}") from error
+        if not isinstance(visual, dict):
+            raise ReviewWorkflowError("reference_visual_gate_invalid: reviewer output must be an object")
+        visual_receipt = {
+            "artifactType": "reference_visual_gate_receipt",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer",
+            "templateKey": template_data["key"],
+            "revision": revision,
+            "attempt": attempt,
+            "reviewer": visual.get("reviewer"),
+            "independenceDeclaration": visual.get("independenceDeclaration"),
+            "referenceInterpretationSha256": sha256_file(reference_interpretation_file),
+            "coverSha256": sha256_file(output),
+            "verdict": visual.get("verdict"),
+            "scores": visual.get("scores"),
+            "evidence": visual.get("evidence"),
+            "hardFailures": visual.get("hardFailures"),
+        }
+        visual_errors = validate_visual_gate(
+            visual_receipt,
+            analysis_producer=str(reference_interpretation.get("producer", "")),
+        )
+        if visual_errors:
+            raise ReviewWorkflowError(f"reference_visual_gate_invalid: {'; '.join(visual_errors)}")
+        if visual_receipt["verdict"] == "pass":
+            return receipt, attempts, visual_receipt
+    raise ReviewWorkflowError(
+        "reference_visual_gate_failed" if reference_interpretation is not None else "cover_check_failed"
+    )
 
 
 def _review_root(run_root: Path, key: str, revision: int) -> Path:
@@ -134,11 +178,21 @@ def create_review_package(
     analysis_filename: str = "style-analysis.json",
     extra_internal: dict[str, object] | None = None,
     cover_checker: Callable[[Path, dict[str, Any], int], dict[str, Any]] | None = None,
+    reference_interpretation: dict[str, Any] | None = None,
+    reference_visual_checker: Callable[[Path, dict[str, Any], dict[str, Any], int], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     key = template_data.get("key")
     if not isinstance(key, str):
         raise ReviewWorkflowError("template_key_missing")
     _preflight(template_data, analysis_data, analysis_filename)
+    if analysis_filename == "style-analysis.json":
+        if reference_interpretation is None:
+            raise ReviewWorkflowError("reference_interpretation_required")
+        interpretation_errors = validate_reference_interpretation(reference_interpretation, expected_key=key)
+        if interpretation_errors:
+            raise ReviewWorkflowError(f"reference_interpretation_failed: {'; '.join(interpretation_errors)}")
+        if reference_visual_checker is None:
+            raise ReviewWorkflowError("reference_visual_checker_required")
     target = _review_root(run_root, key, revision)
     lock_file = _identity_lock(run_root, ledger_file, delivery_set_id, key, revision)
     with _lock(lock_file):
@@ -146,6 +200,9 @@ def create_review_package(
             errors, _ = validate_package(target, "review-package", "local", "", "")
             if errors:
                 raise ReviewWorkflowError(f"review_package_validation_failed: {'; '.join(errors)}")
+            existing_manifest = read_json(target / "artifact-manifest.json")
+            if analysis_filename == "style-analysis.json" and existing_manifest.get("schemaVersion") not in {"5.0.0", "5.1.0"}:
+                raise ReviewWorkflowError("reference_gate_upgrade_required")
             assignment = read_json(target / "internal" / "test-image-assignment.json")
             pool.refresh_persisted(ledger_file)
             matches = [
@@ -178,15 +235,23 @@ def create_review_package(
             local_template["cover"] = "cover.png"
             _write_json(public / "style-template.json", local_template)
             _write_json(internal / analysis_filename, analysis_data)
+            interpretation_file: Path | None = None
+            if reference_interpretation is not None:
+                interpretation_file = internal / "reference-interpretation.json"
+                _write_json(interpretation_file, reference_interpretation)
             for filename, value in (extra_internal or {}).items():
                 _write_json(internal / filename, value)
             asset = pool.asset(assignment["assetId"])
-            provider, attempts = _generate_cover(
+            provider, attempts, visual_receipt = _generate_cover(
                 asset,
                 local_template,
                 public / "cover.png",
                 generator,
                 cover_checker,
+                reference_interpretation=reference_interpretation,
+                reference_interpretation_file=interpretation_file,
+                reference_visual_checker=reference_visual_checker,
+                revision=revision,
             )
             _write_json(internal / "cover-generation-receipt.json", {
                 "artifactType": "cover_generation_receipt",
@@ -206,6 +271,8 @@ def create_review_package(
                 "verdict": "pass",
                 "attempts": attempts,
             })
+            if visual_receipt is not None:
+                _write_json(internal / "reference-visual-gate-receipt.json", visual_receipt)
             ready_at = _now()
             review_assignment = dict(assignment, status="awaiting_approval", reviewReadyAt=ready_at)
             _write_json(internal / "test-image-assignment.json", review_assignment)
@@ -213,7 +280,7 @@ def create_review_package(
                 temporary,
                 "review-package",
                 revision,
-                schema_version="4.0.0",
+                schema_version="5.1.0",
             ))
             errors, _ = validate_package(temporary, "review-package", "local", "", "")
             if errors:
@@ -268,7 +335,17 @@ def compile_reference(
     compiled = compiler(reference)
     if not isinstance(compiled, dict) or not isinstance(compiled.get("template"), dict) or not isinstance(compiled.get("analysis"), dict):
         raise ReviewWorkflowError("compiler_output_invalid")
-    return create_review_package(compiled["template"], compiled["analysis"], pool, generator, **kwargs)
+    interpretation = compiled.get("referenceInterpretation")
+    if not isinstance(interpretation, dict):
+        raise ReviewWorkflowError("reference_interpretation_required")
+    return create_review_package(
+        compiled["template"],
+        compiled["analysis"],
+        pool,
+        generator,
+        reference_interpretation=interpretation,
+        **kwargs,
+    )
 
 
 def produce(
@@ -281,19 +358,36 @@ def produce(
     delivery_set_id: str,
     ledger_file: Path,
     approval_file: Path | None = None,
+    baseline_catalog_file: Path | None = None,
     cover_checker: Callable[[Path, dict[str, Any], int], dict[str, Any]] | None = None,
+    experience_store: DurableExperienceStore | None = None,
 ) -> list[dict[str, Any]]:
-    approval_path = approval_file or (Path(__file__).parents[1] / "references" / "approved-baseline.json")
-    descriptor = read_json(approval_path)
-    snapshot, errors = verify_approval_descriptor(descriptor, repo_root)
-    if errors or snapshot is None:
-        raise ReviewWorkflowError(errors[0] if errors else "baseline_not_approved")
-    baseline_root = (repo_root / descriptor["businessRoot"]).resolve()
-    templates = [read_json(baseline_root / item["path"]) for item in snapshot["entries"]]
+    if experience_store is None:
+        raise ReviewWorkflowError("experience_store_required")
+    try:
+        experience_snapshot = experience_store.load_fresh_snapshot()
+    except ExperienceStoreError as error:
+        raise ReviewWorkflowError(str(error)) from error
+    if approval_file is not None:
+        descriptor = read_json(approval_file)
+        snapshot, errors = verify_approval_descriptor(descriptor, repo_root)
+        if errors or snapshot is None:
+            raise ReviewWorkflowError(errors[0] if errors else "baseline_not_approved")
+        baseline_root = (repo_root / descriptor["businessRoot"]).resolve()
+        templates = [read_json(baseline_root / item["path"]) for item in snapshot["entries"]]
+    else:
+        catalog_path = baseline_catalog_file or (
+            Path(__file__).parents[1]
+            / "references/dynamic-baseline.json"
+        )
+        try:
+            snapshot, templates = DynamicBaselineCatalog(catalog_path).load_active()
+        except DynamicBaselineError as error:
+            raise ReviewWorkflowError(str(error)) from error
     candidates = proposer(snapshot, templates)
     if not isinstance(candidates, list):
         raise ReviewWorkflowError("proposer_output_invalid")
-    used_keys = {item.get("key") for item in templates}
+    used_keys = {item.get("key") for item in templates} | set(experience_snapshot["activeGoodcaseKeys"])
     used_titles = {item.get("title") for item in templates}
     used_prompts = {_prompt_sha256(item) for item in templates}
     results: list[dict[str, Any]] = []
@@ -348,12 +442,17 @@ def record_review_decision(
     pool: TestImagePool,
     ledger_file: Path,
     *,
-    experience_sink: Callable[[dict[str, Any]], None] | None = None,
+    experience_sink: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
+    baseline_sink: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     if verdict not in {"pass", "reject", "pending", "manual_release"}:
         raise ReviewWorkflowError("review_verdict_invalid")
     if not reason.strip():
         raise ReviewWorkflowError("review_reason_required")
+    if verdict in {"pass", "reject"} and experience_sink is None:
+        raise ReviewWorkflowError("experience_sink_required")
+    if verdict == "pass" and baseline_sink is None:
+        raise ReviewWorkflowError("dynamic_baseline_sink_required")
     review_root = review_root.resolve()
     errors, _ = validate_package(review_root, "review-package", "local", "", "")
     if errors:
@@ -367,13 +466,20 @@ def record_review_decision(
     if assignment.get("status") in {"consumed", "released"}:
         existing_receipt = read_json(existing_receipt_file) if existing_receipt_file.is_file() else {}
         if existing_receipt.get("verdict") == verdict:
+            if verdict in {"pass", "reject"}:
+                if experience_sink is None:
+                    raise ReviewWorkflowError("experience_sink_required")
+                _deposit_experience(review_root, existing_receipt, experience_sink)
+            if verdict == "pass":
+                if baseline_sink is None:
+                    raise ReviewWorkflowError("dynamic_baseline_sink_required")
+                _register_dynamic_baseline(review_root, existing_receipt, baseline_sink)
             return {
                 "status": "approved" if verdict == "pass" else "released",
                 "verdict": verdict,
                 "reviewRoot": review_root.as_posix(),
                 "assetId": assignment["assetId"],
                 "nextPhase": "finalization" if verdict == "pass" else None,
-                "warnings": [],
                 "idempotent": True,
             }
         raise ReviewWorkflowError("review_decision_terminal")
@@ -433,7 +539,7 @@ def record_review_decision(
                 temporary,
                 "review-package",
                 identity[2],
-                schema_version="4.0.0",
+                schema_version="5.1.0",
             ))
             package_errors, _ = validate_package(temporary, "review-package", "local", "", "")
             if package_errors:
@@ -451,25 +557,132 @@ def record_review_decision(
         except Exception:
             shutil.rmtree(temporary, ignore_errors=True)
             raise
-    warnings: list[str] = []
-    if experience_sink is not None and verdict in {"pass", "reject"}:
-        try:
-            experience_sink({
-                "casePool": "goodcase" if verdict == "pass" else "badcase",
-                "reviewRoot": review_root.as_posix(),
-                "decision": receipt,
-            })
-        except Exception as error:
-            warnings.append(f"experience_deposit_failed: {error}")
+    if verdict in {"pass", "reject"}:
+        if experience_sink is None:
+            raise ReviewWorkflowError("experience_sink_required")
+        _deposit_experience(review_root, receipt, experience_sink)
+    if verdict == "pass":
+        if baseline_sink is None:
+            raise ReviewWorkflowError("dynamic_baseline_sink_required")
+        _register_dynamic_baseline(review_root, receipt, baseline_sink)
     return {
         "status": "approved" if verdict == "pass" else "released" if verdict in {"reject", "manual_release"} else "awaiting_approval",
         "verdict": verdict,
         "reviewRoot": review_root.as_posix(),
         "assetId": assignment["assetId"],
         "nextPhase": "finalization" if verdict == "pass" else None,
-        "warnings": warnings,
         "idempotent": False,
     }
+
+
+def _deposit_experience(
+    review_root: Path,
+    decision: dict[str, Any],
+    experience_sink: Callable[[dict[str, Any]], dict[str, Any] | None],
+) -> None:
+    receipt_file = review_root / "internal" / "experience-deposit-receipt.json"
+    if receipt_file.is_file():
+        return
+    event = {
+        "casePool": "goodcase" if decision["verdict"] == "pass" else "badcase",
+        "reviewRoot": review_root.as_posix(),
+        "decision": decision,
+    }
+    try:
+        sink_receipt = experience_sink(event)
+    except Exception as error:
+        raise ReviewWorkflowError(f"experience_deposit_failed: {error}") from error
+    temporary = Path(tempfile.mkdtemp(prefix=f".{review_root.name}-experience-", dir=review_root.parent))
+    try:
+        shutil.copytree(review_root, temporary, dirs_exist_ok=True)
+        _write_json(temporary / "internal" / "experience-deposit-receipt.json", {
+            "artifactType": "experience_deposit_receipt",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer",
+            "templateKey": decision["templateKey"],
+            "revision": decision["revision"],
+            "casePool": event["casePool"],
+            "depositedAt": _now(),
+            "sinkReceipt": sink_receipt if isinstance(sink_receipt, dict) else {},
+        })
+        manifest = read_json(review_root / "artifact-manifest.json")
+        _write_json(temporary / "artifact-manifest.json", build_manifest(
+            temporary,
+            "review-package",
+            decision["revision"],
+            schema_version=str(manifest["schemaVersion"]),
+        ))
+        package_errors, _ = validate_package(temporary, "review-package", "local", "", "")
+        if package_errors:
+            raise ReviewWorkflowError(f"review_package_validation_failed: {'; '.join(package_errors)}")
+        backup = review_root.with_name(f".{review_root.name}.before-experience")
+        if backup.exists():
+            shutil.rmtree(backup)
+        os.replace(review_root, backup)
+        try:
+            os.replace(temporary, review_root)
+        except Exception:
+            os.replace(backup, review_root)
+            raise
+        shutil.rmtree(backup)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+
+
+def _register_dynamic_baseline(
+    review_root: Path,
+    decision: dict[str, Any],
+    baseline_sink: Callable[[dict[str, Any]], dict[str, Any] | None],
+) -> None:
+    receipt_file = review_root / "internal" / "dynamic-baseline-registration-receipt.json"
+    if receipt_file.is_file():
+        return
+    event = {"reviewRoot": review_root.as_posix(), "decision": decision}
+    try:
+        sink_receipt = baseline_sink(event)
+    except Exception as error:
+        raise ReviewWorkflowError(f"dynamic_baseline_registration_failed: {error}") from error
+    if not isinstance(sink_receipt, dict):
+        raise ReviewWorkflowError("dynamic_baseline_registration_failed: sink receipt missing")
+    temporary = Path(tempfile.mkdtemp(prefix=f".{review_root.name}-baseline-", dir=review_root.parent))
+    try:
+        shutil.copytree(review_root, temporary, dirs_exist_ok=True)
+        _write_json(temporary / "internal" / "dynamic-baseline-registration-receipt.json", {
+            "artifactType": "dynamic_baseline_registration_receipt",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer",
+            "templateKey": decision["templateKey"],
+            "revision": decision["revision"],
+            "registeredAt": _now(),
+            "catalog": str(sink_receipt.get("catalog", "")),
+            "catalogDigest": str(sink_receipt.get("catalogDigest", "")),
+            "activeRevision": sink_receipt.get("activeRevision"),
+            "sinkReceipt": sink_receipt,
+        })
+        manifest = read_json(review_root / "artifact-manifest.json")
+        _write_json(temporary / "artifact-manifest.json", build_manifest(
+            temporary,
+            "review-package",
+            decision["revision"],
+            schema_version=str(manifest["schemaVersion"]),
+        ))
+        package_errors, _ = validate_package(temporary, "review-package", "local", "", "")
+        if package_errors:
+            raise ReviewWorkflowError(f"review_package_validation_failed: {'; '.join(package_errors)}")
+        backup = review_root.with_name(f".{review_root.name}.before-baseline")
+        if backup.exists():
+            shutil.rmtree(backup)
+        os.replace(review_root, backup)
+        try:
+            os.replace(temporary, review_root)
+        except Exception:
+            os.replace(backup, review_root)
+            raise
+        shutil.rmtree(backup)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
 
 
 def finalize_approved(
@@ -488,6 +701,11 @@ def finalize_approved(
         raise ReviewWorkflowError(f"review_package_validation_failed: {'; '.join(errors)}")
     assignment = read_json(review_root / "internal" / "test-image-assignment.json")
     approval = read_json(review_root / "internal" / "approval-decision-receipt.json")
+    manifest = read_json(review_root / "artifact-manifest.json")
+    if manifest.get("schemaVersion") in {"5.0.0", "5.1.0"} and not (review_root / "internal" / "experience-deposit-receipt.json").is_file():
+        raise ReviewWorkflowError("experience_deposit_required")
+    if manifest.get("schemaVersion") == "5.1.0" and not (review_root / "internal" / "dynamic-baseline-registration-receipt.json").is_file():
+        raise ReviewWorkflowError("dynamic_baseline_registration_required")
     if assignment.get("status") != "consumed" or approval.get("verdict") != "pass":
         raise ReviewWorkflowError("human_approval_required")
     cover_sha = sha256_file(review_root / "review-package" / "cover.png")
@@ -551,7 +769,7 @@ def finalize_approved(
             temporary,
             "final-package",
             revision,
-            schema_version="4.0.0",
+            schema_version="5.1.0",
         ))
         final_errors, _ = validate_package(temporary, "final-package", "remote", assets_domain.lower(), key_prefix)
         if final_errors:

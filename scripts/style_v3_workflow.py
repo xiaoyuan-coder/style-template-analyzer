@@ -784,7 +784,7 @@ def produce(
     preview: bool = False,
     cover_checker: Callable[[Path, dict[str, Any], int], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    approval_path = approval_file or (Path(__file__).parents[1] / "references" / "approved-baseline.json")
+    approval_path = approval_file or (Path(__file__).parents[1] / "references" / "legacy-approved-baseline-94.json")
     approval_descriptor = read_json(approval_path)
     snapshot, errors = verify_approval_descriptor(approval_descriptor, repo_root)
     if errors or snapshot is None:

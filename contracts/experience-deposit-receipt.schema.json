@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/experience-deposit-receipt.schema.json",
+  "title": "ExperienceDepositReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "templateKey", "revision", "casePool", "depositedAt", "sinkReceipt"],
+  "properties": {
+    "artifactType": {"const": "experience_deposit_receipt"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "casePool": {"enum": ["goodcase", "badcase"]},
+    "depositedAt": {"type": "string", "format": "date-time"},
+    "sinkReceipt": {"type": "object"}
+  }
+}

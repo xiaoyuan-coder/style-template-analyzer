@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "4.0.0",
-  "supportedMajors": [1, 2, 3, 4],
+  "schemaVersion": "5.1.0",
+  "supportedMajors": [1, 2, 3, 4, 5],
   "producer": "style-template-analyzer",
   "packageArtifactType": "style_template_package",
   "artifactTypes": {
@@ -42,6 +42,26 @@
     "cover_check_receipt": {
       "schemaVersion": "1.0.0",
       "businessFile": "cover-check-receipt.json",
+      "officialShape": false
+    },
+    "reference_interpretation": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "reference-interpretation.json",
+      "officialShape": false
+    },
+    "reference_visual_gate_receipt": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "reference-visual-gate-receipt.json",
+      "officialShape": false
+    },
+    "experience_deposit_receipt": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "experience-deposit-receipt.json",
+      "officialShape": false
+    },
+    "dynamic_baseline_registration_receipt": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "dynamic-baseline-registration-receipt.json",
       "officialShape": false
     },
     "approval_decision_receipt": {
@@ -91,6 +111,11 @@
     "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"]
   },
   "v5Stages": {
+    "review-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt"],
+    "final-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt", "approval_decision_receipt", "oss_finalization_receipt"],
+    "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"]
+  },
+  "v6Stages": {
     "review-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt"],
     "final-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt", "approval_decision_receipt", "oss_finalization_receipt"],
     "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"]

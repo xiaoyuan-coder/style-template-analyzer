@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only regression for the currently approved 94-template baseline."""
+"""Read-only regression for the legacy 94-template static baseline."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ class ApprovedBaseline94Tests(unittest.TestCase):
     def test_current_approved_baseline_matches_count_and_digest(self) -> None:
         skill_root = Path(__file__).parents[1]
         repo_root = skill_root
-        descriptor = json.loads((skill_root / "references" / "approved-baseline.json").read_text(encoding="utf-8"))
+        descriptor = json.loads((skill_root / "references" / "legacy-approved-baseline-94.json").read_text(encoding="utf-8"))
         business_root = (repo_root / descriptor["businessRoot"]).resolve()
         if not business_root.is_dir():
             self.skipTest("业务总库未挂载；仅跳过真实 94 基线回归")

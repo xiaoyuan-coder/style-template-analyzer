@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/dynamic-baseline-pointer.schema.json",
+  "title": "DynamicBaselinePointer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "catalog", "promotionTrigger", "selectionPolicy", "note"],
+  "properties": {
+    "artifactType": {"const": "style_dynamic_baseline_pointer"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "catalog": {"type": "string", "minLength": 1},
+    "promotionTrigger": {"const": "human-pass"},
+    "selectionPolicy": {"const": "latest-passed-revision-per-key"},
+    "note": {"type": "string", "minLength": 1}
+  }
+}

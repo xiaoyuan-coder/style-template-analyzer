@@ -5,7 +5,7 @@ description: 把参考图编译为 prompt-only 风格模板审核包，或基于
 
 # 风格模板生产
 
-把两个业务意图统一路由到三个阶段。日常主流使用 `scripts/style_review_workflow.py`；`scripts/style_v3_workflow.py` 只承担存量包兼容。
+把两个业务意图统一路由到三个阶段。日常操作统一使用 `python scripts/style_workflow_cli.py <command>`；`scripts/style_review_workflow.py` 承担事务内核，`scripts/style_v3_workflow.py` 只承担存量包兼容。
 
 ## 先路由意图和阶段
 
@@ -21,34 +21,37 @@ description: 把参考图编译为 prompt-only 风格模板审核包，或基于
 ### 参考编译
 
 1. 读取 `references/style-analysis-and-prompting.md` 和 `references/style-template-contract.md`。
-2. 分解用户内容不变量、授权变换、模板常量和参考禁迁移项；形成七维成像指纹与 3–6 个可评分机制。
-3. 编译官方形状 `style-template.json`；运行时只依赖用户上传图和 prompt。
-4. 从全局真图池预留一张可用真实摄影图，生成封面并执行轻量技术检查。
-5. 用 manifest 4.0.0 `review-package` 校验后原子发布，把测试图转为 `awaiting_approval`。
+2. 先生成 `reference-interpretation.json`，明确单图/成对/带标注对比、before 与 target-effect 角色、解释性结构排除项和仍存歧义。歧义未清空时停止编译。
+3. 分解用户内容不变量、授权变换、模板常量和参考禁迁移项；形成七维成像指纹与 3–6 个可评分机制。
+4. 编译官方形状 `style-template.json`；运行时只依赖用户上传图和 prompt。
+5. 从全局真图池预留一张可用真实摄影图，生成封面并执行轻量技术检查。
+6. 由未参与分析和 prompt 编写的视觉 reviewer 对六个视觉维度独立评分；单项低于 80、平均低于 90、自审或出现对比版式/标题/色条/套准线复制时停止发布。
+7. 用 manifest 5.1.0 `review-package` 校验后原子发布，把测试图转为 `awaiting_approval`。
 
 ### 自生产
 
-1. 读取 `references/self-production-strategy.md`、`references/goodcase-after-aesthetics.md`、`references/badcase-learning.md` 和最新有效批准基线。
-2. 用 `X 图形语言 × Y 空间语法 × B 内容绑定 × C 边界策略` 设计候选，执行审美非退化、信息增量、结构有效性、识别度和印制闭合门禁；材质默认只作辅助表现。
-3. 在基线、当前批次和经验快照中检查 key、标题、prompt 机制和类别新颖性。
-4. 每个合格候选调用同一审核包内核。经验快照不可用时使用最新有效版并记录警告，继续交付当前批次。
+1. 读取 `references/self-production-strategy.md`、独立自生产创意库、`references/goodcase-after-aesthetics.md`、`references/badcase-learning.md` 和 `references/dynamic-baseline.json` 指向的最新动态基线。
+2. 根据输入的 `sourceAdvantage` 先选择一个高层创意母题，用其启发问题和变体轴发明内容落点、关系结构与载体；创意母题不绑定固定模板 key、画风或版式。
+3. 用 `X 图形语言 × Y 空间语法 × B 内容绑定 × C 边界策略` 编译候选，再读取相关模板实现案例做重复检查和成败校验；材质默认只作辅助表现。
+4. 在基线、当前批次和经验快照中检查 key、标题、prompt 机制和类别新颖性，执行审美非退化、信息增量、结构有效性、识别度和印制闭合门禁。
+5. 每个合格候选调用同一审核包内核。经验快照缺失、无效或与语料摘要不一致时停止新一轮自生产，先重建 `current.json`。
 
 ## 阶段 2：记录人工验收
 
 人工决定支持四种值：
 
-- `pass`：冻结封面 SHA-256 和 prompt SHA-256，测试图转为 `consumed`，立即进入阶段 3。
-- `reject`：记录人工驳回证据，测试图转为 `released`，该 revision 可异步进入 BadCase。
+- `pass`：冻结封面 SHA-256 和 prompt SHA-256，测试图转为 `consumed`，沉淀 GoodCase 并自动登记动态基线，然后进入阶段 3。
+- `reject`：记录人工驳回证据，测试图转为 `released`，该 revision 同步进入 BadCase 经验总账。
 - `pending`：保持 `awaiting_approval` 和当前占用，不设超时自动释放。
 - `manual_release`：只在人工明确要求时把待定测试图转为 `released`。
 
-通过与驳回决定可调用经验沉淀 adapter。沉淀失败只返回 warning，不回滚审核决定，不阻塞 OSS 正式化。
+通过与驳回决定必须调用经验沉淀 adapter。`pass` 还必须登记动态基线。沉淀成功后写入 `experience-deposit-receipt.json`，基线登记成功后写入 `dynamic-baseline-registration-receipt.json`；任一步失败都会保留可重试的人工结论，并暂停正式化。
 
 ## 阶段 3：正式化
 
 1. 校验 `approval-decision-receipt.json` 为人工 `pass`，测试图状态为 `consumed`，双 SHA 与审核包一致。
 2. 按封面内容哈希执行可恢复 OSS 上传，回填受控 HTTPS URL，运行 remote validator。
-3. 用 manifest 4.0.0 `final-package` 原子发布严格两文件 `package/`。
+3. 校验经验沉淀与动态基线登记回执已经存在，用 manifest 5.1.0 `final-package` 原子发布严格两文件 `package/`。
 4. OSS 失败时保留人工通过结论与测试图消费状态；修复配置后重试阶段 3。
 
 读取 `references/oss-handoff.md` 获取受控域名、恢复和密钥边界。
@@ -70,6 +73,10 @@ ready → reserved → awaiting_approval → released
 
 ## 交付结构
 
+业务根目录按阶段分开：审核包写入总库 `05-风格化模板生产/06-待验收模板/<batch>/review-packages/`；人工 `pass` 的 revision 立即登记到 `05-风格化模板生产/04-研发交付/已通过正式模板包/<key>/<revision>/`，OSS 完成后更新正式地址。审核回执同步登记到 `07-数据验收与上线/04-人工验收记录/风格模板/已通过/`。每次 `pass` 自动更新动态基线；同 key 以最高通过 revision 为当前有效版本。
+
+统一通过模板目录覆盖新版正式包与已确认通过的历史交付。历史包保持源目录不变，通过 `scripts/rebuild_approved_template_catalog.py` 复制到统一目录并登记 `approvalProvenance`；不得为旧流程伪造新版逐 revision 回执。统一目录清单同时报告 OSS 已正式化与待正式化数量。
+
 ```text
 <run>/review-packages/<key>/<revision>/
 ├── artifact-manifest.json
@@ -81,7 +88,11 @@ ready → reserved → awaiting_approval → released
     ├── test-image-assignment.json
     ├── cover-generation-receipt.json
     ├── cover-check-receipt.json
-    └── approval-decision-receipt.json  # 人工表态后
+    ├── reference-interpretation.json  # 参考编译意图
+    ├── reference-visual-gate-receipt.json  # 参考编译意图
+    ├── approval-decision-receipt.json  # 人工表态后
+    ├── experience-deposit-receipt.json  # pass/reject 后
+    └── dynamic-baseline-registration-receipt.json  # pass 后
 
 <run>/<key>/<revision>/
 ├── artifact-manifest.json
@@ -95,19 +106,28 @@ ready → reserved → awaiting_approval → released
 
 只交付当前阶段的两文件公开目录。内部证据通过相邻 manifest 追溯，不注入官方 `style-template.json`。
 
-## 后续经验与评测
+## 经验与后续评测
 
-- 把通过 revision 写入 GoodCase，把驳回 revision 写入 BadCase，重建可版本化经验快照。
-- 当前生产任务在正式包交付后即可完成；经验沉淀、测试图补池和完整真图评测走旁路。
+- 把通过 revision 写入 GoodCase，把驳回 revision 写入 BadCase，并在同一审核事务中重建可版本化经验快照。
+- 统一经验总账位于总库 `06-模板质量评测/05-问题分类与案例/风格模板经验总账/`；`style-experience-corpus.json` 是追加账本，`current.json` 是生产读取入口。
+- 经验沉淀是 `pass/reject` 的完成条件；测试图补池和完整真图评测继续走旁路。
 - 只在用户明确要求完整评测时运行 `evaluate(final-package)`，评测不修改正式包。
 
 ## 验证
 
 ```bash
+python scripts/style_workflow_cli.py validate-reference <reference-interpretation.json> --template-key <key>
+python scripts/style_workflow_cli.py reserve-test-image --help
+python scripts/style_workflow_cli.py compile-reference --help
+python scripts/style_workflow_cli.py review-decision --help
+python scripts/style_workflow_cli.py rebuild-experience --help
+python scripts/style_workflow_cli.py audit-experience <experience-root>
+python scripts/style_workflow_cli.py audit-baseline
 python scripts/validate_style_package.py <review-root> --profile review-package
 python scripts/validate_style_package.py <final-root> --profile final-package --assets-domain <assets-host>
 python scripts/audit_style_test_pool.py <pool.json> <assignment-ledger.json>
 python scripts/migrate_test_image_ledger_v2.py <legacy-ledger.json> <human-decisions.json> <new-ledger.json>
+python scripts/rebuild_approved_template_catalog.py --data-root <总库根目录> --apply
 corepack pnpm test
 python /Users/xiaoyuan/.codex/skills/.system/skill-creator/scripts/quick_validate.py .
 ```

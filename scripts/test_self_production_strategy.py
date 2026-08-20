@@ -46,6 +46,16 @@ class SelfProductionStrategyTests(unittest.TestCase):
             self.assertIn(marker, self.strategy)
         self.assertIn("去掉来源的配色、材质和外壳", self.strategy)
 
+    def test_creative_ideas_are_separate_from_template_realization_cases(self) -> None:
+        for marker in (
+            "创意母题", "独立自生产创意库", "模板实现案例", "启发问题", "变体轴",
+        ):
+            self.assertIn(marker, self.skill + self.strategy)
+        self.assertIn("自生产创意库/creative-inspiration-library.json", self.strategy)
+        self.assertIn("模板实现案例库/template-idea-realization-case-library.json", self.strategy)
+        self.assertIn("单个实现案例被驳回，只约束该实现", self.strategy)
+        self.assertIn("至少推演两种不同载体或阅读路径", self.strategy)
+
     def test_plain_print_templates_exclude_analysis_frames_by_default(self) -> None:
         for marker in ("外框", "放大镜小窗", "连接线", "分析标注"):
             self.assertIn(marker, self.strategy)
@@ -66,7 +76,7 @@ class SelfProductionStrategyTests(unittest.TestCase):
             self.assertIn("OSS", document)
         self.assertIn("阶段 1 只交付当前 revision", self.skill)
         self.assertIn("人工 `pass`", self.skill)
-        self.assertIn("立即进入阶段 3", self.skill)
+        self.assertIn("自动登记动态基线，然后进入阶段 3", self.skill)
         self.assertIn("所有合格候选先编译审核包", self.strategy)
         self.assertIn("数量目标或“模板包”字样不能跳过审批", self.strategy)
         self.assertIn("阶段 2 的人工 `pass` 让该 revision 进入阶段 3", self.oss_handoff)
@@ -97,7 +107,11 @@ class SelfProductionStrategyTests(unittest.TestCase):
 
     def test_manifest_tracks_strategy_and_regression_test(self) -> None:
         manifest = json.loads((self.skill_root / "skill-manifest.json").read_text(encoding="utf-8"))
-        self.assertGreaterEqual(tuple(map(int, manifest["version"].split("."))), (4, 5, 0))
+        package = json.loads((self.skill_root / "package.json").read_text(encoding="utf-8"))
+        self.assertGreaterEqual(tuple(map(int, manifest["version"].split("."))), (5, 1, 0))
+        self.assertEqual(package["version"], manifest["version"])
+        self.assertIn("package.json", manifest["tracked_files"])
+        self.assertIn("pnpm-lock.yaml", manifest["tracked_files"])
         self.assertIn("references/self-production-strategy.md", manifest["tracked_files"])
         self.assertIn("references/goodcase-after-aesthetics.md", manifest["tracked_files"])
         self.assertIn("references/badcase-learning.md", manifest["tracked_files"])
@@ -106,6 +120,7 @@ class SelfProductionStrategyTests(unittest.TestCase):
         self.assertIn("scripts/test_approved_variant_selection.py", manifest["tracked_files"])
         self.assertIn("scripts/test_build_style_badcase_corpus.py", manifest["tracked_files"])
         self.assertIn("scripts/test_self_production_strategy.py", manifest["tracked_files"])
+        self.assertIn("docs/adr/0014-separate-creative-ideas-from-template-realizations.md", manifest["tracked_files"])
 
     def test_explicit_user_rejections_feed_badcase_learning(self) -> None:
         for marker in (

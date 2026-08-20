@@ -136,8 +136,12 @@ class V3SchemaTests(unittest.TestCase):
             self.validate("baseline-snapshot.schema.json", snapshot)
 
     def test_current_baseline_approval_shape(self) -> None:
-        approval = json.loads((Path(__file__).parents[1] / "references" / "approved-baseline.json").read_text(encoding="utf-8"))
+        approval = json.loads((Path(__file__).parents[1] / "references" / "legacy-approved-baseline-94.json").read_text(encoding="utf-8"))
         self.validate("baseline-approval.schema.json", approval)
+
+    def test_dynamic_baseline_pointer_shape(self) -> None:
+        pointer = json.loads((Path(__file__).parents[1] / "references" / "dynamic-baseline.json").read_text(encoding="utf-8"))
+        self.validate("dynamic-baseline-pointer.schema.json", pointer)
 
 
 if __name__ == "__main__":

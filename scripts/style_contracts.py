@@ -11,8 +11,8 @@ from typing import Any
 
 
 PRODUCER = "style-template-analyzer"
-PACKAGE_SCHEMA_VERSION = "4.0.0"
-SUPPORTED_PACKAGE_VERSIONS = {"1.0.0", "2.0.0", "3.0.0", "4.0.0"}
+PACKAGE_SCHEMA_VERSION = "5.1.0"
+SUPPORTED_PACKAGE_VERSIONS = {"1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0", "5.1.0"}
 KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
@@ -54,6 +54,26 @@ ARTIFACT_SPECS = {
     },
     "cover_check_receipt": {
         "filenames": {"cover-check-receipt.json"},
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
+    "reference_interpretation": {
+        "filenames": {"reference-interpretation.json"},
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
+    "reference_visual_gate_receipt": {
+        "filenames": {"reference-visual-gate-receipt.json"},
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
+    "experience_deposit_receipt": {
+        "filenames": {"experience-deposit-receipt.json"},
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
+    "dynamic_baseline_registration_receipt": {
+        "filenames": {"dynamic-baseline-registration-receipt.json"},
         "schemaVersion": "1.0.0",
         "officialShape": False,
     },
@@ -145,11 +165,18 @@ V5_STAGE_REQUIREMENTS = {
     "evaluation": {"style_template", "style_cover", "style_evaluation", "source_package_receipt"},
 }
 
-STAGE_REQUIREMENTS = {**LEGACY_STAGE_REQUIREMENTS, **V3_STAGE_REQUIREMENTS, **V4_STAGE_REQUIREMENTS, **V5_STAGE_REQUIREMENTS}
+V6_STAGE_REQUIREMENTS = {
+    "review-package": V5_STAGE_REQUIREMENTS["review-package"],
+    "final-package": V5_STAGE_REQUIREMENTS["final-package"],
+    "evaluation": V5_STAGE_REQUIREMENTS["evaluation"],
+}
+
+STAGE_REQUIREMENTS = {**LEGACY_STAGE_REQUIREMENTS, **V3_STAGE_REQUIREMENTS, **V4_STAGE_REQUIREMENTS, **V5_STAGE_REQUIREMENTS, **V6_STAGE_REQUIREMENTS}
 LEGACY_STAGES = set(LEGACY_STAGE_REQUIREMENTS)
 V3_STAGES = set(V3_STAGE_REQUIREMENTS)
 V4_STAGES = set(V4_STAGE_REQUIREMENTS)
 V5_STAGES = set(V5_STAGE_REQUIREMENTS)
+V6_STAGES = set(V6_STAGE_REQUIREMENTS)
 
 
 def artifact_type_for(path: Path, stage: str) -> str | None:
@@ -183,7 +210,7 @@ def template_key_for(data: Any, artifact_type: str) -> str | None:
 
 
 def artifact_schema_version(artifact_type: str, package_schema_version: str) -> str:
-    if artifact_type == "test_image_assignment" and package_schema_version != "4.0.0":
+    if artifact_type == "test_image_assignment" and package_schema_version not in {"4.0.0", "5.0.0", "5.1.0"}:
         return "1.0.0"
     return str(ARTIFACT_SPECS[artifact_type]["schemaVersion"])
 
@@ -218,6 +245,8 @@ def build_manifest(
         else V4_STAGES
         if schema_version == "3.0.0"
         else V5_STAGES
+        if schema_version == "4.0.0"
+        else V6_STAGES
     )
     if schema_version not in SUPPORTED_PACKAGE_VERSIONS:
         raise ValueError(f"不支持的 schemaVersion：{schema_version}")
@@ -245,12 +274,18 @@ def build_manifest(
         else V4_STAGE_REQUIREMENTS
         if schema_version == "3.0.0"
         else V5_STAGE_REQUIREMENTS
+        if schema_version == "4.0.0"
+        else V6_STAGE_REQUIREMENTS
     )
     missing = requirements[stage] - artifact_types
     if missing:
         raise ValueError(f"{stage} 阶段缺少产物：{', '.join(sorted(missing))}")
-    if schema_version in {"2.0.0", "3.0.0", "4.0.0"} and stage in {"package", "prepublish", "review-package", "final-package"} and not artifact_types.intersection({"style_analysis", "self_production_analysis"}):
+    if schema_version in {"2.0.0", "3.0.0", "4.0.0", "5.0.0", "5.1.0"} and stage in {"package", "prepublish", "review-package", "final-package"} and not artifact_types.intersection({"style_analysis", "self_production_analysis"}):
         raise ValueError(f"{stage} 阶段缺少分析证据")
+    if schema_version in {"5.0.0", "5.1.0"} and "style_analysis" in artifact_types:
+        missing_reference = {"reference_interpretation", "reference_visual_gate_receipt"} - artifact_types
+        if missing_reference:
+            raise ValueError(f"{stage} 阶段缺少参考图门禁证据：{', '.join(sorted(missing_reference))}")
 
     keys: set[str] = set()
     for path, record in zip(candidates, artifacts):

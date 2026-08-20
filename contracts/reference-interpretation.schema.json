@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/reference-interpretation.schema.json",
+  "title": "ReferenceInterpretation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactType",
+    "schemaVersion",
+    "producer",
+    "templateKey",
+    "referenceType",
+    "extractionMode",
+    "sourceImages",
+    "excludedElements",
+    "templateConstants",
+    "ambiguities"
+  ],
+  "properties": {
+    "artifactType": {"const": "reference_interpretation"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"type": "string", "minLength": 1},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "referenceType": {
+      "enum": ["single-style-reference", "paired-images", "paired-comparison", "annotated-paired-comparison"]
+    },
+    "extractionMode": {
+      "enum": ["direct-reconstruction", "paired-difference", "hybrid-operator-salvage", "low-information-salvage"]
+    },
+    "sourceImages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "roles"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "roles": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"enum": ["before", "target-effect", "context", "annotation-ui", "explanatory-layout"]}
+          }
+        }
+      }
+    },
+    "excludedElements": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "templateConstants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "aestheticFunction", "category", "explicitlyAuthorized"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "aestheticFunction": {"type": "string", "minLength": 1},
+          "category": {"enum": ["style-effect", "composition", "texture", "color-system", "explanatory-element"]},
+          "explicitlyAuthorized": {"type": "boolean"}
+        }
+      }
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}
