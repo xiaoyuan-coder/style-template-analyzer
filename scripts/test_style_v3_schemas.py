@@ -13,7 +13,7 @@ from jsonschema import Draft202012Validator
 from PIL import Image
 
 from style_baseline import build_baseline_snapshot
-from style_test_pool import TestImagePool, normalize_asset
+from style_test_pool import TestImagePool, TestPoolError, normalize_asset
 from test_validate_style_template import template
 
 
@@ -71,6 +71,15 @@ class V3SchemaTests(unittest.TestCase):
                 "colorMode": "color",
                 "plainMuseumObject": False,
             }],
+        })
+        self.validate("test-image-pool.schema.json", {
+            "artifactType": "style_test_image_pool",
+            "schemaVersion": "2.1.0",
+            "producer": "test-image-pool-curator",
+            "generatedAt": "2026-08-21T08:00:00Z",
+            "sourceManifest": "/tmp/candidate-manifest.json",
+            "decisionLog": "/tmp/screening-decisions.json",
+            "assets": [],
         })
         self.validate("test-image-assignment.schema.json", assignment)
         self.validate("cover-generation-receipt.schema.json", {
@@ -142,6 +151,108 @@ class V3SchemaTests(unittest.TestCase):
     def test_dynamic_baseline_pointer_shape(self) -> None:
         pointer = json.loads((Path(__file__).parents[1] / "references" / "dynamic-baseline.json").read_text(encoding="utf-8"))
         self.validate("dynamic-baseline-pointer.schema.json", pointer)
+
+    def test_high_recognition_pool_shape(self) -> None:
+        asset_id = "anchor-" + "a" * 20
+        event_id = "screen-20260820T080000-1234abcd"
+        self.validate("test-image-pool.schema.json", {
+            "artifactType": "style_test_image_pool",
+            "schemaVersion": "2.0.0",
+            "producer": "style-template-analyzer",
+            "generatedAt": "2026-08-20T08:00:00Z",
+            "sourceManifest": "/tmp/candidate-manifest.json",
+            "decisionLog": "/tmp/screening-decisions.json",
+            "assets": [{
+                "assetId": asset_id,
+                "sourcePageUrl": "https://example.test/source",
+                "imageUrl": "https://example.test/known.jpg",
+                "collectedAt": "2026-08-20T08:00:00Z",
+                "mime": "image/jpeg",
+                "width": 640,
+                "height": 512,
+                "sha256": "c" * 64,
+                "perceptualHash": "d" * 16,
+                "category": "名人梗图",
+                "localPath": "/tmp/known.jpg",
+                "orientation": "landscape",
+                "status": "ready",
+                "recognitionAnchor": {
+                    "kind": "celebrity-meme",
+                    "screenedBy": "human",
+                    "screenedAt": "2026-08-20T08:00:00Z",
+                    "decisionEventId": event_id,
+                    "sourceCandidateIds": ["known"],
+                },
+            }],
+        })
+
+    def test_pool_version_and_producer_are_exactly_bound(self) -> None:
+        schema = json.loads((self.contracts / "test-image-pool.schema.json").read_text(encoding="utf-8"))
+        validator = Draft202012Validator(schema)
+
+        def pool(schema_version: str, producer: str) -> dict:
+            return {
+                "artifactType": "style_test_image_pool",
+                "schemaVersion": schema_version,
+                "producer": producer,
+                "generatedAt": "2026-08-21T08:00:00Z",
+                "sourceManifest": "/tmp/candidate-manifest.json",
+                "decisionLog": "/tmp/screening-decisions.json",
+                "assets": [],
+            }
+
+        self.assertTrue(validator.is_valid(pool("2.0.0", "style-template-analyzer")))
+        self.assertTrue(validator.is_valid(pool("2.1.0", "test-image-pool-curator")))
+        self.assertFalse(validator.is_valid(pool("2.0.0", "test-image-pool-curator")))
+        self.assertFalse(validator.is_valid(pool("2.1.0", "style-template-analyzer")))
+
+    def test_pool_consumer_loads_curator_2_1_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_file = root / "anchor.jpg"
+            Image.new("RGB", (640, 512), (90, 120, 160)).save(image_file, format="JPEG")
+            pool_file = root / "pool.json"
+            ledger_file = root / "assignment-ledger.json"
+            pool_file.write_text(json.dumps({
+                "artifactType": "style_test_image_pool",
+                "schemaVersion": "2.1.0",
+                "producer": "test-image-pool-curator",
+                "generatedAt": "2026-08-21T08:00:00Z",
+                "sourceManifest": "/tmp/candidate-manifest.json",
+                "decisionLog": "/tmp/screening-decisions.json",
+                "assets": [{
+                    "assetId": "anchor-" + "a" * 20,
+                    "sourcePageUrl": "https://example.test/source",
+                    "imageUrl": "https://example.test/anchor.jpg",
+                    "collectedAt": "2026-08-21T08:00:00Z",
+                    "mime": "image/jpeg",
+                    "width": 640,
+                    "height": 512,
+                    "sha256": hashlib.sha256(image_file.read_bytes()).hexdigest(),
+                    "perceptualHash": "1" * 16,
+                    "category": "互联网经典梗图",
+                    "localPath": image_file.as_posix(),
+                    "orientation": "landscape",
+                    "status": "ready",
+                    "recognitionAnchor": {
+                        "kind": "internet-meme",
+                        "screenedBy": "human",
+                        "screenedAt": "2026-08-21T08:00:00Z",
+                        "decisionEventId": "screen-20260821T080000-1234abcd",
+                        "sourceCandidateIds": ["known-scene"],
+                    },
+                }],
+            }, ensure_ascii=False), encoding="utf-8")
+            pool = TestImagePool.load(pool_file, ledger_file)
+            self.assertEqual(pool.capacity(), 1)
+            original_pool = pool_file.read_bytes()
+            assignment = pool.reserve_persisted("delivery-1", "internet-meme", 1, ledger_file)
+            self.assertEqual(assignment["status"], "reserved")
+            self.assertTrue(ledger_file.is_file())
+            self.assertEqual(pool_file.read_bytes(), original_pool)
+            with self.assertRaisesRegex(TestPoolError, "upstream_test_image_pool_is_read_only"):
+                pool.save(pool_file, ledger_file)
+            self.assertEqual(pool_file.read_bytes(), original_pool)
 
 
 if __name__ == "__main__":

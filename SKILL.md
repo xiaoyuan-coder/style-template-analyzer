@@ -1,6 +1,6 @@
 ---
 name: style-template-analyzer
-description: 把参考图编译为 prompt-only 风格模板审核包，或基于已批准基线、GoodCase 和 BadCase 自主生产新模板；根据人工验收决定释放或消费真实测试图，对通过项执行 OSS 上传、URL 回填与正式包交付。用于风格模板、参考图编译、模板自生产、阶段路由、审核验收、真实测试图池、GoodCase/BadCase 沉淀、OSS 最终化、契约迁移与维护审计。
+description: 把参考图编译为 prompt-only 风格模板审核包，或基于已批准基线、GoodCase 和 BadCase 自主生产新模板；消费人工准入的高认知测试图，根据模板验收决定释放或消费测试图，对通过项执行 OSS 上传、URL 回填与正式包交付。用于风格模板、参考图编译、模板自生产、阶段路由、审核验收、GoodCase/BadCase 沉淀、动态基线、OSS 最终化、契约迁移与维护审计。
 ---
 
 # 风格模板生产
@@ -24,7 +24,7 @@ description: 把参考图编译为 prompt-only 风格模板审核包，或基于
 2. 先生成 `reference-interpretation.json`，明确单图/成对/带标注对比、before 与 target-effect 角色、解释性结构排除项和仍存歧义。歧义未清空时停止编译。
 3. 分解用户内容不变量、授权变换、模板常量和参考禁迁移项；形成七维成像指纹与 3–6 个可评分机制。
 4. 编译官方形状 `style-template.json`；运行时只依赖用户上传图和 prompt。
-5. 从全局真图池预留一张可用真实摄影图，生成封面并执行轻量技术检查。
+5. 从高认知测试图池预留一张人工 Pass 的可用图片，生成封面并执行轻量技术检查。
 6. 由未参与分析和 prompt 编写的视觉 reviewer 对六个视觉维度独立评分；单项低于 80、平均低于 90、自审或出现对比版式/标题/色条/套准线复制时停止发布。
 7. 用 manifest 5.1.0 `review-package` 校验后原子发布，把测试图转为 `awaiting_approval`。
 
@@ -69,7 +69,7 @@ ready → reserved → awaiting_approval → released
 - 只有人工 `pass` 会消费；人工 `reject` 和 `manual_release` 返回可用容量。
 - v1 `committed` 存量记录缺少人工通过证据，读取时按 `legacyHeld` 安全占用；只能根据人工决策表迁移。
 
-测试图池维护时读取 `references/test-image-pool.md` 和 `references/test-image-admission.md`。
+候选采集、人工筛选、历史批次、准入池发布和筛选经验由独立 `test-image-pool-curator` Skill 管理。本 Skill 只消费版本化 `pool.json`：兼容历史 `2.0.0 / style-template-analyzer`，新交接使用 `2.1.0 / test-image-pool-curator`。读取时必须校验图片存在性、SHA-256、尺寸和 MIME；预留、待验收、释放和消费只写入 assignment ledger，不回写上游准入池。具体交接与状态约定见 `references/test-image-pool.md`。
 
 ## 交付结构
 

@@ -2,45 +2,136 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://memebuy.local/contracts/style-test-image-pool.schema.json",
   "title": "StyleTestImagePool",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["artifactType", "schemaVersion", "producer", "assets"],
-  "properties": {
-    "artifactType": {"const": "style_test_image_pool"},
-    "schemaVersion": {"enum": ["1.0.0", "1.1.0"]},
-    "producer": {"const": "style-template-analyzer"},
-    "assets": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["assetId", "sourceAdapter", "sourcePageUrl", "imageUrl", "author", "license", "licenseUrl", "rightsStatus", "collectedAt", "mime", "width", "height", "sha256", "perceptualHash", "photographic", "photographicEvidence", "riskLabels", "category", "localPath", "orientation", "status"],
-        "properties": {
-          "assetId": {"type": "string", "minLength": 1},
-          "sourceAdapter": {"type": "string", "minLength": 1},
-          "sourcePageUrl": {"type": "string", "format": "uri"},
-          "imageUrl": {"type": "string", "format": "uri"},
-          "author": {"type": "string", "minLength": 1},
-          "license": {"type": "string", "minLength": 1},
-          "licenseUrl": {"type": "string", "format": "uri"},
-          "rightsStatus": {"enum": ["verified", "manual_review", "rejected"]},
-          "collectedAt": {"type": "string", "minLength": 1},
-          "mime": {"enum": ["image/jpeg", "image/png", "image/webp"]},
-          "width": {"type": "integer", "minimum": 512},
-          "height": {"type": "integer", "minimum": 512},
-          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-          "perceptualHash": {"type": "string", "pattern": "^[a-f0-9]{16}$"},
-          "photographic": {"type": "boolean"},
-          "photographicEvidence": {"type": "string", "minLength": 1},
-          "riskLabels": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-          "category": {"type": "string", "minLength": 1},
-          "semanticClusterId": {"type": "string", "minLength": 1},
-          "visualEra": {"enum": ["contemporary", "historical", "unknown"]},
-          "colorMode": {"enum": ["color", "black-and-white", "unknown"]},
-          "plainMuseumObject": {"type": "boolean"},
-          "localPath": {"type": "string", "minLength": 1},
-          "orientation": {"enum": ["landscape", "portrait", "square"]},
-          "status": {"enum": ["ready", "manual_review", "rejected"]}
+  "oneOf": [
+    {"$ref": "#/$defs/legacyPool"},
+    {"$ref": "#/$defs/highRecognitionPool"}
+  ],
+  "$defs": {
+    "poolIdentity": {
+      "type": "object",
+      "required": ["artifactType", "schemaVersion", "producer", "assets"],
+      "properties": {
+        "artifactType": {"const": "style_test_image_pool"},
+        "producer": {"enum": ["style-template-analyzer", "test-image-pool-curator"]},
+        "assets": {"type": "array"}
+      }
+    },
+    "legacyPool": {
+      "allOf": [
+        {"$ref": "#/$defs/poolIdentity"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "artifactType": true,
+            "schemaVersion": {"enum": ["1.0.0", "1.1.0"]},
+            "producer": {"const": "style-template-analyzer"},
+            "assets": {"type": "array", "items": {"$ref": "#/$defs/legacyAsset"}}
+          }
+        }
+      ]
+    },
+    "legacyAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "sourceAdapter", "sourcePageUrl", "imageUrl", "author", "license", "licenseUrl", "rightsStatus", "collectedAt", "mime", "width", "height", "sha256", "perceptualHash", "photographic", "photographicEvidence", "riskLabels", "category", "localPath", "orientation", "status"],
+      "properties": {
+        "assetId": {"type": "string", "minLength": 1},
+        "sourceAdapter": {"type": "string", "minLength": 1},
+        "sourcePageUrl": {"type": "string", "format": "uri"},
+        "imageUrl": {"type": "string", "format": "uri"},
+        "author": {"type": "string", "minLength": 1},
+        "license": {"type": "string", "minLength": 1},
+        "licenseUrl": {"type": "string", "format": "uri"},
+        "rightsStatus": {"enum": ["verified", "manual_review", "rejected"]},
+        "collectedAt": {"type": "string", "minLength": 1},
+        "mime": {"enum": ["image/jpeg", "image/png", "image/webp"]},
+        "width": {"type": "integer", "minimum": 512},
+        "height": {"type": "integer", "minimum": 512},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "perceptualHash": {"type": "string", "pattern": "^[a-f0-9]{16}$"},
+        "photographic": {"type": "boolean"},
+        "photographicEvidence": {"type": "string", "minLength": 1},
+        "riskLabels": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "category": {"type": "string", "minLength": 1},
+        "semanticClusterId": {"type": "string", "minLength": 1},
+        "visualEra": {"enum": ["contemporary", "historical", "unknown"]},
+        "colorMode": {"enum": ["color", "black-and-white", "unknown"]},
+        "plainMuseumObject": {"type": "boolean"},
+        "localPath": {"type": "string", "minLength": 1},
+        "orientation": {"enum": ["landscape", "portrait", "square"]},
+        "status": {"enum": ["ready", "manual_review", "rejected"]}
+      }
+    },
+    "highRecognitionPool": {
+      "allOf": [
+        {"$ref": "#/$defs/poolIdentity"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["generatedAt", "sourceManifest", "decisionLog"],
+          "properties": {
+            "artifactType": true,
+            "schemaVersion": {"enum": ["2.0.0", "2.1.0"]},
+            "producer": true,
+            "generatedAt": {"type": "string", "format": "date-time"},
+            "sourceManifest": {"type": "string", "minLength": 1},
+            "decisionLog": {"type": "string", "minLength": 1},
+            "assets": {"type": "array", "items": {"$ref": "#/$defs/highRecognitionAsset"}}
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {"schemaVersion": {"const": "2.0.0"}},
+                "required": ["schemaVersion"]
+              },
+              "then": {
+                "properties": {"producer": {"const": "style-template-analyzer"}}
+              }
+            },
+            {
+              "if": {
+                "properties": {"schemaVersion": {"const": "2.1.0"}},
+                "required": ["schemaVersion"]
+              },
+              "then": {
+                "properties": {"producer": {"const": "test-image-pool-curator"}}
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "highRecognitionAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "sourcePageUrl", "imageUrl", "collectedAt", "mime", "width", "height", "sha256", "perceptualHash", "category", "localPath", "orientation", "status", "recognitionAnchor"],
+      "properties": {
+        "assetId": {"type": "string", "pattern": "^anchor-[a-f0-9]{20}$"},
+        "sourcePageUrl": {"type": "string", "format": "uri"},
+        "imageUrl": {"type": "string", "format": "uri"},
+        "collectedAt": {"type": "string", "format": "date-time"},
+        "mime": {"enum": ["image/jpeg", "image/png", "image/webp"]},
+        "width": {"type": "integer", "minimum": 128},
+        "height": {"type": "integer", "minimum": 128},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "perceptualHash": {"type": "string", "pattern": "^[a-f0-9]{16}$"},
+        "category": {"type": "string", "minLength": 1},
+        "localPath": {"type": "string", "minLength": 1},
+        "orientation": {"enum": ["landscape", "portrait", "square"]},
+        "status": {"const": "ready"},
+        "recognitionAnchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "screenedBy", "screenedAt", "decisionEventId", "sourceCandidateIds"],
+          "properties": {
+            "kind": {"enum": ["celebrity-meme", "known-ip", "famous-artwork", "internet-meme", "other"]},
+            "screenedBy": {"const": "human"},
+            "screenedAt": {"type": "string", "format": "date-time"},
+            "decisionEventId": {"type": "string", "minLength": 1},
+            "sourceCandidateIds": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+            "note": {"type": "string"}
+          }
         }
       }
     }

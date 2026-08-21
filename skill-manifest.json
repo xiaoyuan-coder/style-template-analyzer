@@ -1,10 +1,10 @@
 {
   "name": "style-template-analyzer",
-  "version": "6.1.0",
+  "version": "7.6.0",
   "source": "repo",
   "runtime_copy_hint": "$CODEX_HOME/skills/style-template-analyzer",
-  "updated_at": "2026-08-20",
-  "notes": "Version 6.1.0 按人工 pass 自动扩展动态基线，同 key 激活最高通过 revision，并将基线登记纳入审核与正式化门禁。artifact manifest 升级到 5.1.0。Version 6.0.0 的参考语义、独立视觉、经验闭环、统一 CLI 与 OSS 配置发现保持不变。",
+  "updated_at": "2026-08-21",
+  "notes": "Version 7.6.0 将候选采集、人工筛选、工作台、经验学习和准入池发布迁至独立 test-image-pool-curator；本 Skill 只读消费精确绑定的 2.0.0/style-template-analyzer 与 2.1.0/test-image-pool-curator 测试图池，并继续管理模板侧预留、待验收、释放和消费。",
   "tracked_files": [
     "SKILL.md",
     "CONTEXT.md",
@@ -59,7 +59,6 @@
     "references/style-template-import.schema.json",
     "references/style-template-import.sample.json",
     "references/oss-handoff.md",
-    "references/test-image-admission.md",
     "references/test-image-pool.md",
     "references/v3-migration.md",
     "scripts/validate_style_template.py",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rights-aware real-photo pool and stable delivery-set assignment ledger."""
+"""Read-only high-recognition pool adapter and stable assignment ledger."""
 
 from __future__ import annotations
 
@@ -44,6 +44,7 @@ def _validate_contract(data: object, schema_name: str, invalid_code: str) -> Non
                 pass
             else:
                 supported_major = 2 if schema_name in {
+                    "test-image-pool.schema.json",
                     "test-image-assignment.schema.json",
                     "test-image-assignment-ledger.schema.json",
                 } else 1
@@ -79,6 +80,47 @@ def hamming_distance(left: str, right: str) -> int:
 
 
 def normalize_asset(raw: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(raw.get("recognitionAnchor"), dict):
+        required = {
+            "assetId", "sourcePageUrl", "imageUrl", "collectedAt", "mime", "width",
+            "height", "sha256", "perceptualHash", "category", "localPath", "orientation",
+            "status", "recognitionAnchor",
+        }
+        missing = sorted(required - set(raw))
+        if missing:
+            raise TestPoolError(f"test_asset_invalid: missing={','.join(missing)}")
+        if not _valid_hex(raw["sha256"], 64) or not _valid_hex(raw["perceptualHash"], 16):
+            raise TestPoolError("test_asset_invalid: hash")
+        if raw["mime"] not in {"image/jpeg", "image/png", "image/webp"}:
+            raise TestPoolError("test_asset_invalid: mime")
+        if not isinstance(raw["width"], int) or not isinstance(raw["height"], int) or min(raw["width"], raw["height"]) < 128:
+            raise TestPoolError("test_asset_invalid: dimensions")
+        if raw.get("status") != "ready":
+            raise TestPoolError("test_asset_invalid: status")
+        for field in ("assetId", "category"):
+            if not isinstance(raw[field], str) or not raw[field].strip():
+                raise TestPoolError(f"test_asset_invalid: {field}")
+        for field in ("sourcePageUrl", "imageUrl"):
+            parsed = urlparse(str(raw[field]))
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise TestPoolError(f"test_asset_invalid: {field}")
+        try:
+            datetime.fromisoformat(str(raw["collectedAt"]).replace("Z", "+00:00"))
+        except ValueError as error:
+            raise TestPoolError("test_asset_invalid: collectedAt") from error
+        local_path = Path(str(raw["localPath"]))
+        if not local_path.is_file() or sha256_file(local_path) != raw["sha256"]:
+            raise TestPoolError("test_asset_invalid: localPath")
+        try:
+            with Image.open(local_path) as image:
+                image.verify()
+                expected_mime = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}.get(image.format)
+                if expected_mime != raw["mime"] or image.size != (raw["width"], raw["height"]):
+                    raise TestPoolError("test_asset_invalid: localImage")
+        except OSError as error:
+            raise TestPoolError("test_asset_invalid: localImage") from error
+        return dict(raw)
+
     required = {
         "assetId", "sourceAdapter", "sourcePageUrl", "imageUrl", "author", "license",
         "licenseUrl", "rightsStatus", "collectedAt", "mime", "width", "height", "sha256",
@@ -168,7 +210,11 @@ class TestImagePool:
         ready = [asset for asset in catalog_ready if asset["assetId"] not in blocked]
         total = len(ready)
         categories = Counter(asset["category"] for asset in ready)
-        sources = Counter(asset["sourceAdapter"] for asset in ready)
+        sources = Counter(
+            asset.get("sourceAdapter")
+            or f"recognition:{asset.get('recognitionAnchor', {}).get('kind', 'other')}"
+            for asset in ready
+        )
         historical_or_bw = sum(
             asset.get("visualEra") == "historical" or asset.get("colorMode") == "black-and-white"
             for asset in ready
@@ -405,6 +451,8 @@ class TestImagePool:
             latest_data = json.loads(pool_file.read_text(encoding="utf-8")) if pool_file.is_file() else None
             if latest_data is not None:
                 validate_pool_document(latest_data)
+                if latest_data.get("schemaVersion") in {"2.0.0", "2.1.0"}:
+                    raise TestPoolError("upstream_test_image_pool_is_read_only")
             latest = latest_data.get("assets", []) if isinstance(latest_data, dict) else []
             merged = TestImagePool(latest, near_duplicate_threshold=self.near_duplicate_threshold)
             by_id = {asset["assetId"]: asset for asset in merged.assets}
@@ -417,6 +465,8 @@ class TestImagePool:
                 added = merged.add(asset)
                 by_id[added["assetId"]] = added
             self.assets = merged.assets
+            if any(isinstance(asset.get("recognitionAnchor"), dict) for asset in self.assets):
+                raise TestPoolError("high_recognition_pool_requires_screening_provenance")
             self._atomic_write(pool_file, {
                 "artifactType": "style_test_image_pool",
                 "schemaVersion": "1.1.0",
