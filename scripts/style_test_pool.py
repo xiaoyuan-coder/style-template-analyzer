@@ -12,6 +12,7 @@ from PIL import Image
 from jsonschema import Draft202012Validator
 
 from style_atomic import atomic_write_json
+from style_assignment_contracts import assignment_schema_name
 from style_contracts import sha256_file
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +36,9 @@ class TestPoolError(ValueError):
 
 
 def _validate_contract(data: object, schema_name: str, invalid_code: str) -> None:
+    ledger_version = data.get("schemaVersion") if (
+        schema_name == "test-image-assignment-ledger.schema.json" and isinstance(data, dict)
+    ) else None
     if isinstance(data, dict):
         version = data.get("schemaVersion")
         if isinstance(version, str) and version.count(".") == 2:
@@ -47,24 +51,25 @@ def _validate_contract(data: object, schema_name: str, invalid_code: str) -> Non
                     "test-image-pool.schema.json": 2,
                     "test-image-assignment.schema.json": 3,
                     "test-image-assignment-v2.schema.json": 2,
-                    "test-image-assignment-ledger.schema.json": 3,
+                    "test-image-assignment-ledger.schema.json": 4,
                 }.get(schema_name, 1)
                 if major > supported_major:
                     raise TestPoolError("contract_version_unsupported")
     schema_file = Path(__file__).parents[1] / "contracts" / schema_name
     schema = json.loads(schema_file.read_text(encoding="utf-8"))
-    if schema_name == "test-image-assignment-ledger.schema.json":
+    if schema_name == "test-image-assignment-ledger.schema.json" and ledger_version == "4.0.0":
         schema["properties"]["assignments"]["items"] = {"type": "object"}
+        schema["allOf"] = []
     if list(Draft202012Validator(schema).iter_errors(data)):
         raise TestPoolError(invalid_code)
-    if schema_name == "test-image-assignment-ledger.schema.json" and isinstance(data, dict):
+    if (
+        schema_name == "test-image-assignment-ledger.schema.json"
+        and isinstance(data, dict)
+        and ledger_version == "4.0.0"
+    ):
         for assignment in data.get("assignments", []):
             version = assignment.get("schemaVersion") if isinstance(assignment, dict) else None
-            assignment_schema = {
-                "1.0.0": "test-image-assignment-v1.schema.json",
-                "2.0.0": "test-image-assignment-v2.schema.json",
-                "3.0.0": "test-image-assignment.schema.json",
-            }.get(str(version), "test-image-assignment.schema.json")
+            assignment_schema = assignment_schema_name(version)
             _validate_contract(assignment, assignment_schema, invalid_code)
 
 
@@ -182,6 +187,7 @@ class TestImagePool:
     assets: list[dict[str, Any]] = field(default_factory=list)
     assignments: list[dict[str, Any]] = field(default_factory=list)
     near_duplicate_threshold: int = 5
+    assignment_ledger_version: str = "4.0.0"
 
     def __post_init__(self) -> None:
         initial = list(self.assets)
@@ -527,11 +533,14 @@ class TestImagePool:
                     "assignment_ledger_invalid",
                 )
                 self.assignments = ledger_data.get("assignments", [])
+                self.assignment_ledger_version = str(ledger_data.get("schemaVersion"))
                 self._validate_assignments()
             result = operation()
+            self.assignment_ledger_version = "4.0.0"
+            self._validate_assignments()
             atomic_write_json(ledger_file, {
                 "artifactType": "test_image_assignment_ledger",
-                "schemaVersion": "3.0.0",
+                "schemaVersion": "4.0.0",
                 "producer": "style-template-analyzer",
                 "assignments": self.assignments,
             })
@@ -545,12 +554,9 @@ class TestImagePool:
         }
         current_assets: set[str] = set()
         for item in self.assignments:
-            schema_name = {
-                "1.0.0": "test-image-assignment-v1.schema.json",
-                "2.0.0": "test-image-assignment-v2.schema.json",
-                "3.0.0": "test-image-assignment.schema.json",
-            }.get(str(item.get("schemaVersion")), "test-image-assignment.schema.json")
-            _validate_contract(item, schema_name, "assignment_ledger_invalid")
+            if self.assignment_ledger_version == "4.0.0":
+                schema_name = assignment_schema_name(item.get("schemaVersion"))
+                _validate_contract(item, schema_name, "assignment_ledger_invalid")
             try:
                 identity = (item["deliverySetId"], item["templateKey"], item["revision"])
                 asset = item["assetId"]
@@ -699,5 +705,9 @@ class TestImagePool:
                 "test-image-assignment-ledger.schema.json",
                 "assignment_ledger_invalid",
             )
-        pool = cls(pool_data["assets"], ledger_data["assignments"])
+        pool = cls(
+            pool_data["assets"],
+            ledger_data["assignments"],
+            assignment_ledger_version=str(ledger_data.get("schemaVersion", "4.0.0")),
+        )
         return pool

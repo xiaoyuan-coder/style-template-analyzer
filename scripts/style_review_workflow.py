@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,9 @@ from validate_style_template import validate_data as validate_template
 
 class ReviewWorkflowError(RuntimeError):
     """Machine-readable approval workflow failure."""
+
+
+_DELIVERY_THREAD_LOCK = threading.RLock()
 
 
 def _now() -> str:
@@ -178,11 +182,27 @@ def _publish_delivery(
     errors = validate_template(final_data, delivery, "remote", assets_domain.lower(), key_prefix)
     if errors:
         raise ReviewWorkflowError(f"delivery_validation_failed: {'; '.join(errors)}")
-    atomic_write_json(delivery, final_data)
-    atomic_write_json(
-        delivery.parent / "artifact-manifest.json",
-        build_manifest(delivery.parent, "handoff"),
-    )
+    with _DELIVERY_THREAD_LOCK:
+        with _lock(delivery.parent / ".delivery.lock"):
+            manifest_file = delivery.parent / "artifact-manifest.json"
+            delivery_before = read_json(delivery) if delivery.is_file() else None
+            manifest_before = read_json(manifest_file) if manifest_file.is_file() else None
+            try:
+                atomic_write_json(delivery, final_data)
+                atomic_write_json(
+                    manifest_file,
+                    build_manifest(delivery.parent, "handoff"),
+                )
+            except Exception:
+                if delivery_before is None:
+                    delivery.unlink(missing_ok=True)
+                else:
+                    atomic_write_json(delivery, delivery_before)
+                if manifest_before is None:
+                    manifest_file.unlink(missing_ok=True)
+                else:
+                    atomic_write_json(manifest_file, manifest_before)
+                raise
     return delivery
 
 
@@ -486,21 +506,22 @@ def record_review_decision(
     identity = (assignment["deliverySetId"], assignment["templateKey"], assignment["revision"])
     if verdict == "pass" and not _lifecycle_guarded:
         approval_guard = getattr(baseline_sink, "approval_guard", None)
-        if callable(approval_guard):
-            try:
-                with approval_guard(identity[1]):
-                    return record_review_decision(
-                        review_root,
-                        verdict,
-                        reason,
-                        pool,
-                        ledger_file,
-                        experience_sink=experience_sink,
-                        baseline_sink=baseline_sink,
-                        _lifecycle_guarded=True,
-                    )
-            except DynamicBaselineError as error:
-                raise ReviewWorkflowError(f"dynamic_baseline_registration_failed: {error}") from error
+        if not callable(approval_guard):
+            raise ReviewWorkflowError("dynamic_baseline_guard_required")
+        try:
+            with approval_guard(identity[1]):
+                return record_review_decision(
+                    review_root,
+                    verdict,
+                    reason,
+                    pool,
+                    ledger_file,
+                    experience_sink=experience_sink,
+                    baseline_sink=baseline_sink,
+                    _lifecycle_guarded=True,
+                )
+        except DynamicBaselineError as error:
+            raise ReviewWorkflowError(f"dynamic_baseline_registration_failed: {error}") from error
     existing_receipt_file = review_root / "internal" / "approval-decision-receipt.json"
     if assignment.get("status") in {"consumed", "released"}:
         existing_receipt = read_json(existing_receipt_file) if existing_receipt_file.is_file() else {}

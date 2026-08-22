@@ -7,10 +7,13 @@ import hashlib
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 from PIL import Image
 
+from style_atomic import atomic_write_json
 from style_review_workflow import (
     ReviewWorkflowError,
     compile_reference,
@@ -82,6 +85,18 @@ class Oss:
         return {"provider": "fixture-oss", "object": "same-content-hash"}
 
 
+class GuardedBaseline:
+    def __init__(self, sink) -> None:
+        self.sink = sink
+
+    @contextmanager
+    def approval_guard(self, template_key: str):
+        yield
+
+    def __call__(self, event: dict) -> dict:
+        return self.sink(event)
+
+
 class ApprovalGatedWorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -96,6 +111,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         self.generator = Generator()
         self.experience_events: list[dict] = []
         self.baseline_events: list[dict] = []
+        self.guarded_baseline = GuardedBaseline(self.baseline_sink)
 
     def experience_sink(self, event: dict) -> dict:
         self.experience_events.append(event)
@@ -130,10 +146,26 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         result["templateKey"] = template_data["key"]
         return result
 
-    def create_review(self, *, delivery: str = "delivery-1", revision: int = 1) -> dict:
+    def create_review(
+        self,
+        *,
+        delivery: str = "delivery-1",
+        revision: int = 1,
+        key: str | None = None,
+    ) -> dict:
+        compiler = self.compiler
+        if key is not None:
+            def compiler(reference: Path) -> dict:
+                compiled = self.compiler(reference)
+                compiled["template"]["key"] = key
+                compiled["template"]["title"] = "线程样式甲" if key.endswith("a") else "线程样式乙"
+                compiled["template"]["metadata"]["sourceRef"]["producerKey"] = key
+                compiled["analysis"]["templateKey"] = key
+                compiled["referenceInterpretation"]["templateKey"] = key
+                return compiled
         return compile_reference(
             self.reference,
-            self.compiler,
+            compiler,
             self.pool,
             self.generator,
             run_root=self.root / "runs",
@@ -170,7 +202,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             self.pool,
             self.ledger,
             experience_sink=self.experience_sink,
-            baseline_sink=self.baseline_sink,
+            baseline_sink=self.guarded_baseline,
         )
         self.assertEqual(result["status"], "awaiting_approval")
         self.assertEqual(self.pool.capacity("another-delivery"), 1)
@@ -220,7 +252,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             self.pool,
             self.ledger,
             experience_sink=self.experience_sink,
-            baseline_sink=self.baseline_sink,
+            baseline_sink=self.guarded_baseline,
         )
         self.assertEqual(decision["status"], "approved")
         self.assertEqual(self.pool.capacity("delivery-2"), 1)
@@ -272,6 +304,81 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         self.assertTrue(delivery_file.is_file())
         self.assertEqual(oss.calls, 1)
 
+    def test_concurrent_finalization_keeps_every_delivery_manifest_entry(self) -> None:
+        reviews = [
+            self.create_review(delivery="delivery-concurrent", key="thread-style-a"),
+            self.create_review(delivery="delivery-concurrent", key="thread-style-b"),
+        ]
+        for review in reviews:
+            record_review_decision(
+                Path(review["reviewRoot"]),
+                "pass",
+                "人工验收通过",
+                self.pool,
+                self.ledger,
+                experience_sink=self.experience_sink,
+                baseline_sink=self.guarded_baseline,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(
+                lambda review: finalize_approved(
+                    Path(review["reviewRoot"]),
+                    self.root / "runs",
+                    Oss(),
+                    assets_domain="assets.example.com",
+                ),
+                reviews,
+            ))
+
+        self.assertEqual({Path(result["delivery"]).name for result in results}, {
+            "thread-style-a.json",
+            "thread-style-b.json",
+        })
+        manifest = json.loads(
+            (self.root / "runs" / "delivery" / "artifact-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            {item["path"] for item in manifest["artifacts"]},
+            {"thread-style-a.json", "thread-style-b.json"},
+        )
+
+    def test_delivery_manifest_failure_rolls_back_new_delivery(self) -> None:
+        from unittest.mock import patch
+
+        review = self.create_review(delivery="delivery-rollback", key="rollback-style")
+        record_review_decision(
+            Path(review["reviewRoot"]),
+            "pass",
+            "人工验收通过",
+            self.pool,
+            self.ledger,
+            experience_sink=self.experience_sink,
+            baseline_sink=self.guarded_baseline,
+        )
+        delivery_root = self.root / "runs" / "delivery"
+        original_atomic_write = atomic_write_json
+        failed = False
+
+        def fail_manifest_once(path: Path, value: object) -> None:
+            nonlocal failed
+            if path.name == "artifact-manifest.json" and not failed:
+                failed = True
+                raise OSError("manifest write failed")
+            original_atomic_write(path, value)
+
+        with patch("style_review_workflow.atomic_write_json", side_effect=fail_manifest_once):
+            with self.assertRaisesRegex(OSError, "manifest write failed"):
+                finalize_approved(
+                    Path(review["reviewRoot"]),
+                    self.root / "runs",
+                    Oss(),
+                    assets_domain="assets.example.com",
+                )
+
+        self.assertFalse((delivery_root / "rollback-style.json").exists())
+        self.assertFalse((delivery_root / "artifact-manifest.json").exists())
+
     def test_retired_template_is_rejected_before_pass_mutates_review_or_ledger(self) -> None:
         review = self.create_review()
         baseline_root = self.root / "baseline"
@@ -310,6 +417,27 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(self.experience_events, [])
 
+    def test_pass_requires_an_authoritative_template_lifecycle_guard(self) -> None:
+        review = self.create_review()
+
+        with self.assertRaisesRegex(
+            ReviewWorkflowError,
+            "dynamic_baseline_guard_required",
+        ):
+            record_review_decision(
+                Path(review["reviewRoot"]),
+                "pass",
+                "人工验收通过",
+                self.pool,
+                self.ledger,
+                experience_sink=self.experience_sink,
+                baseline_sink=self.baseline_sink,
+            )
+
+        assignment = json.loads(self.ledger.read_text(encoding="utf-8"))["assignments"][0]
+        self.assertEqual(assignment["status"], "awaiting_approval")
+        self.assertEqual(self.experience_events, [])
+
     def test_experience_deposit_failure_blocks_completion_and_can_retry(self) -> None:
         review = self.create_review()
 
@@ -324,7 +452,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
                 self.pool,
                 self.ledger,
                 experience_sink=broken_sink,
-                baseline_sink=self.baseline_sink,
+                baseline_sink=self.guarded_baseline,
             )
         with self.assertRaisesRegex(ReviewWorkflowError, "experience_deposit_required"):
             finalize_approved(
@@ -340,7 +468,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             self.pool,
             self.ledger,
             experience_sink=self.experience_sink,
-            baseline_sink=self.baseline_sink,
+            baseline_sink=self.guarded_baseline,
         )
         self.assertTrue(retried["idempotent"])
         self.assertTrue((Path(review["reviewRoot"]) / "internal" / "experience-deposit-receipt.json").is_file())
@@ -350,6 +478,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
 
         def broken_baseline(event: dict) -> dict:
             raise RuntimeError("catalog offline")
+        guarded_broken_baseline = GuardedBaseline(broken_baseline)
 
         with self.assertRaisesRegex(ReviewWorkflowError, "dynamic_baseline_registration_failed"):
             record_review_decision(
@@ -359,7 +488,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
                 self.pool,
                 self.ledger,
                 experience_sink=self.experience_sink,
-                baseline_sink=broken_baseline,
+                baseline_sink=guarded_broken_baseline,
             )
         with self.assertRaisesRegex(ReviewWorkflowError, "dynamic_baseline_registration_required"):
             finalize_approved(
@@ -375,7 +504,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             self.pool,
             self.ledger,
             experience_sink=self.experience_sink,
-            baseline_sink=self.baseline_sink,
+            baseline_sink=self.guarded_baseline,
         )
         self.assertTrue(retried["idempotent"])
         self.assertTrue((Path(review["reviewRoot"]) / "internal" / "dynamic-baseline-registration-receipt.json").is_file())
@@ -453,7 +582,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             pool=self.pool,
             ledger_file=self.ledger,
             experience_sink=self.experience_sink,
-            baseline_sink=self.baseline_sink,
+            baseline_sink=self.guarded_baseline,
             finalize_on_pass={
                 "run_root": self.root / "runs",
                 "oss_adapter": oss,

@@ -8,7 +8,7 @@
 | `self-produce` | 读取创意母题、动态基线与经验快照，生成若干独立审核包 | 逐项 `awaiting_approval` |
 | `review-decision` | 记录人工通过、驳回、待定或明确释放 | 决定回执与测试图终态/持续占用 |
 | `finalize` | 对已通过 revision 上传 OSS、回填 URL 并导出单 JSON | `final-package + delivery/<key>.json` |
-| `retire-template` | 登记人工退役、释放测试图并退出活动基线 | 退役索引与 ledger 一致 |
+| `retire-template` | 登记人工退役、刷新活动 catalog、释放测试图并退出动态基线 | 退役索引、活动 catalog 与 ledger 一致 |
 | `evaluate` | 使用独立测试集评测正式包 | 独立评测交接物 |
 
 `compile-reference` 与 `self-produce` 是两个业务意图，共用审核包、人工决定、最终化三阶段内核。统一命令入口是 `style_workflow_cli.py`，网页来源、生成器、独立视觉 reviewer、经验沉淀和 OSS 通过 adapter 接入。
@@ -45,7 +45,7 @@ OSS 属于包最终化。OSS 失败不改变人工通过证据，不释放已消
 
 ### 阶段 2
 
-1. 读取审核包与当前 ledger，校验身份和状态。
+1. 读取审核包与当前 ledger，校验身份和状态；Pass 必须先取得权威动态基线 adapter 的生命周期门禁。
 2. 冻结封面 SHA-256 与 prompt SHA-256。
 3. 先原子提交 ledger 决定，再替换审核包内部证据；如文件替换中断，重试根据 ledger 恢复。
 4. 对 `pass/reject` 幂等写入 GoodCase/BadCase 经验账本并重建当前快照，随后写入经验沉淀回执。
@@ -58,7 +58,7 @@ OSS 属于包最终化。OSS 失败不改变人工通过证据，不释放已消
 1. 只接受 `consumed + human pass + 双 SHA 一致` 的审核包。
 2. OSS adapter 按封面内容哈希去重，上传后 HEAD 验证，输出受控域名 URL。
 3. 要求经验沉淀和动态基线登记回执已经存在，在 staging 生成严格两文件 `package/`，运行 manifest 5.1.0 `final-package` 与 remote validator。
-4. 原子发布正式 revision，再把已验证的官方 JSON 原子导出为 `delivery/<key>.json`，并重建相邻 `artifact-manifest.json`。已存在且校验通过的正式 revision 会幂等补齐交付 JSON 与 manifest。
+4. 原子发布正式 revision，再在 delivery 发布锁内把已验证的官方 JSON 导出为 `delivery/<key>.json`，并重建相邻 `artifact-manifest.json`。每次原子写使用唯一临时文件；manifest 写入失败时回滚本次 delivery JSON，重试会重新补齐两者。
 
 批量任务中每个 revision 独立发布，允许部分成功。
 
@@ -72,7 +72,7 @@ OSS 属于包最终化。OSS 失败不改变人工通过证据，不释放已消
 ## 契约版本
 
 - 官方 `style-template.json`：1.0.0，形状保持不变。
-- 普通测试图分配：2.0.0；模板退役释放记录：3.0.0，保留 `previousDecision`；ledger 外层支持 1.0.0/2.0.0/3.0.0。
+- 普通测试图分配：2.0.0；模板退役释放记录：3.0.0，保留 `previousDecision`；ledger 外层当前写入 4.0.0，并兼容读取 1.0.0/2.0.0/3.0.0。
 - artifact manifest：5.1.0 增加动态基线登记回执；5.0.0 提供参考语义、独立视觉和经验回执；4.0.0 只读兼容。
 - 审核决定回执：1.0.0。
 - 未知更高 major 返回 `failed: contract_version_unsupported`。
@@ -89,6 +89,7 @@ OSS 属于包最终化。OSS 失败不改变人工通过证据，不释放已消
 | `style_test_pool.py` | 全局容量、唯一预留和人工释放/消费状态机 |
 | `style_retirement.py` | 退役索引合同、幂等登记与共享解析 |
 | `style_atomic.py` | 跨模块复用的原子 JSON 替换 |
+| `style_assignment_contracts.py` | assignment 版本到 Schema 的唯一运行时路由 |
 | `style_contracts.py` | artifact、版本、stage、哈希和 manifest |
 | `validate_style_package.py` | 审核包、正式包和两文件门禁 |
 | `style_v3_workflow.py` | v3/v4 存量包读取、评测与迁移兼容 |

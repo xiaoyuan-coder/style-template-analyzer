@@ -1,10 +1,10 @@
 {
   "name": "style-template-analyzer",
-  "version": "7.8.0",
+  "version": "7.8.1",
   "source": "repo",
   "runtime_copy_hint": "$CODEX_HOME/skills/style-template-analyzer",
   "updated_at": "2026-08-22",
-  "notes": "Version 7.8.0 落实阶段 3 的 <key>.json 导出，并新增模板退役事务：幂等登记退役索引、释放测试图、从活动 catalog 与动态基线排除，同时保留正式 revision 和历史审核证据。",
+  "notes": "Version 7.8.1 收紧模板生命周期事务：Pass 强制权威门禁，退役与活动 catalog/ledger 同锁更新并支持失败回滚，delivery 发布串行化并支持失败回滚，原子 JSON 使用唯一临时文件，ledger 外层升级到 4.0.0 且兼容旧版读取。",
   "tracked_files": [
     "SKILL.md",
     "CONTEXT.md",
@@ -74,6 +74,7 @@
     "scripts/rebuild_approved_template_catalog.py",
     "scripts/style_baseline.py",
     "scripts/style_atomic.py",
+    "scripts/style_assignment_contracts.py",
     "scripts/style_pool_ingest.py",
     "scripts/style_institutional_source.py",
     "scripts/style_source_adapter.mjs",
@@ -99,6 +100,7 @@
     "scripts/test_migrate_test_image_ledger_v2.py",
     "scripts/test_rebuild_approved_template_catalog.py",
     "scripts/test_style_pool_ingest.py",
+    "scripts/test_style_atomic.py",
     "scripts/test_style_institutional_source.py",
     "scripts/test_style_package_contract.py",
     "scripts/test_style_source_adapter.mjs",

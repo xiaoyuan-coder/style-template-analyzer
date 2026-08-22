@@ -18,6 +18,7 @@ import validate_style_analysis
 import validate_style_evaluation
 import validate_style_manifest
 import validate_style_template
+from style_assignment_contracts import assignment_schema_name
 
 
 def read_json(path: Path) -> object:
@@ -216,11 +217,7 @@ def validate_package(
                 errors.append(f"{file}: JSON 读取失败：{error}")
                 continue
             version = data.get("schemaVersion") if isinstance(data, dict) else None
-            schema_name = {
-                "1.0.0": "test-image-assignment-v1.schema.json",
-                "2.0.0": "test-image-assignment-v2.schema.json",
-                "3.0.0": "test-image-assignment.schema.json",
-            }.get(version, "test-image-assignment.schema.json")
+            schema_name = assignment_schema_name(version)
             schema_errors = validate_schema(data, schema_name)
             errors.extend(f"{file}: {error}" for error in schema_errors)
             if not schema_errors and isinstance(data, dict):

@@ -10,9 +10,9 @@
 
 ## 决策
 
-1. 新增 `retire-template` 作为唯一退役入口，要求模板 key、人工理由、退役索引、已发布测试图池和 assignment ledger。
-2. 命令先幂等登记 `已退役模板索引.json`，再把该 key 的 `reserved / awaiting_approval / consumed` 分配转为 `released`。中断后重试可补齐 ledger。
-3. 退役释放把 assignment 升级到 3.0.0，使用人工 `template_retired` 决定，并把原决定保存在 `previousDecision`。历史 assignment 继续保留，同一 `deliverySetId` 的禁复用记录不被删除。
+1. 新增 `retire-template` 作为唯一退役入口，要求模板 key、人工理由、退役索引、统一活动 catalog、已发布测试图池和 assignment ledger。
+2. 退役索引固定为活动 catalog 同目录的 `已退役模板索引.json`。命令在生命周期锁内完成输入预校验、幂等登记、catalog 刷新和 ledger 释放；后续步骤失败时回滚 registry 与 catalog。
+3. 退役释放把 assignment 升级到 3.0.0，使用人工 `template_retired` 决定，并把原决定保存在 `previousDecision`。ledger 外层写入版本升级到 4.0.0，旧 1.0.0–3.0.0 保持只读兼容。历史 assignment 继续保留，同一 `deliverySetId` 的禁复用记录不被删除。
 4. 统一目录重建和动态基线读取都以退役索引为排除依据。退役登记与动态基线晋升共享生命周期锁；人工 Pass 在修改 ledger、回执和经验之前持有同一锁并确认 key 仍处于活动状态。
 5. 正式 revision、审核回执和既有包目录继续保存，只从活动 catalog 与生产基线中退出。
 

@@ -45,7 +45,7 @@ description: 把参考图编译为 prompt-only 风格模板审核包，或基于
 - `pending`：保持 `awaiting_approval` 和当前占用，不设超时自动释放。
 - `manual_release`：只在人工明确要求时把待定测试图转为 `released`。
 
-通过与驳回决定必须调用经验沉淀 adapter。`pass` 还必须登记动态基线。沉淀成功后写入 `experience-deposit-receipt.json`，基线登记成功后写入 `dynamic-baseline-registration-receipt.json`；任一步失败都会保留可重试的人工结论，并暂停正式化。
+通过与驳回决定必须调用经验沉淀 adapter。`pass` 还必须使用带 `approval_guard` 的权威动态基线 adapter，在任何 ledger、回执和经验变更前锁定生命周期并排除退役 key；缺少该门禁时拒绝 Pass。沉淀成功后写入 `experience-deposit-receipt.json`，基线登记成功后写入 `dynamic-baseline-registration-receipt.json`；任一步失败都会保留可重试的人工结论，并暂停正式化。
 
 ## 阶段 3：正式化
 
@@ -68,7 +68,7 @@ ready → reserved → awaiting_approval → released
 - 唯一性按全局 ledger 计算，跨 `deliverySetId` 也不得并发复用。
 - 同一 `deliverySetId` 内保留完整使用历史；测试图即使已 `released`，也不得分配给该批次的其他模板或返工 revision。
 - `released` 资产可以在后续新的 `deliverySetId` 中重新分配；`consumed` 资产在模板活动期间退出可用容量，人工执行模板退役时转为 `released`。
-- 退役释放会把 assignment 升级为 3.0.0，使用 `template_retired` 决定并在 `previousDecision` 保留原人工结论；普通审核包继续使用 assignment 2.0.0。
+- 退役释放会把 assignment 升级为 3.0.0，使用 `template_retired` 决定并在 `previousDecision` 保留原人工结论；普通审核包继续使用 assignment 2.0.0。任何持久化变更都会把 ledger 外层升级为 4.0.0；读取继续兼容外层 1.0.0–3.0.0。
 - 技术失败只能在进入人工审核前由系统释放 `reserved`。
 - 进入 `awaiting_approval` 后，系统无权根据超时、任务结束或 OSS 失败释放。
 - 只有人工 `pass` 会消费；人工 `reject` 和 `manual_release` 返回可用容量。
@@ -82,7 +82,7 @@ ready → reserved → awaiting_approval → released
 
 统一通过模板目录覆盖新版正式包与已确认通过的历史交付。历史包保持源目录不变，通过 `scripts/rebuild_approved_template_catalog.py` 复制到统一目录并登记 `approvalProvenance`；不得为旧流程伪造新版逐 revision 回执。统一目录清单同时报告 OSS 已正式化与待正式化数量。
 
-人工退役统一执行 `retire-template`：先幂等写入统一目录相邻的 `已退役模板索引.json`，再把该 key 的测试图占用转为 `released`。活动目录和动态基线读取时必须排除退役 key，原正式 revision 与历史审核证据继续保留。
+人工退役统一执行 `retire-template`：退役索引必须是活动 catalog 同目录的 `已退役模板索引.json`。命令在同一生命周期锁内预校验全部输入，幂等登记退役、从活动 catalog 移除该 key，再把该 key 的测试图占用转为 `released`；任一步失败时回滚已写入的 registry 和 catalog。活动目录和动态基线读取时必须排除退役 key，原正式 revision 与历史审核证据继续保留。
 
 ```text
 <run>/review-packages/<key>/<revision>/

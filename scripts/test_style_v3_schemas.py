@@ -11,6 +11,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 from PIL import Image
+from referencing import Registry, Resource
 
 from style_baseline import build_baseline_snapshot
 from style_test_pool import TestImagePool, TestPoolError, normalize_asset
@@ -22,8 +23,18 @@ class V3SchemaTests(unittest.TestCase):
         self.contracts = Path(__file__).parents[1] / "contracts"
 
     def validate(self, filename: str, value: object) -> None:
+        self.validator(filename).validate(value)
+
+    def validator(self, filename: str) -> Draft202012Validator:
         schema = json.loads((self.contracts / filename).read_text(encoding="utf-8"))
-        Draft202012Validator(schema).validate(value)
+        assignment_schema = json.loads(
+            (self.contracts / "test-image-assignment.schema.json").read_text(encoding="utf-8")
+        )
+        registry = Registry().with_resource(
+            assignment_schema["$id"],
+            Resource.from_contents(assignment_schema),
+        )
+        return Draft202012Validator(schema, registry=registry)
 
     def asset(self) -> dict:
         local_path = Path(tempfile.gettempdir()) / "style-v3-schema-fixture.jpg"
@@ -95,11 +106,27 @@ class V3SchemaTests(unittest.TestCase):
         self.validate("test-image-assignment.schema.json", retired)
         self.validate("test-image-assignment-ledger.schema.json", {
             "artifactType": "test_image_assignment_ledger",
-            "schemaVersion": "3.0.0",
+            "schemaVersion": "4.0.0",
             "producer": "style-template-analyzer",
             "assignments": [retired],
         })
         self.assertEqual(retired["previousDecision"]["verdict"], "pass")
+
+        invalid_retired = dict(retired)
+        invalid_retired.pop("decision")
+        ledger_validator = self.validator("test-image-assignment-ledger.schema.json")
+        self.assertFalse(ledger_validator.is_valid({
+            "artifactType": "test_image_assignment_ledger",
+            "schemaVersion": "4.0.0",
+            "producer": "style-template-analyzer",
+            "assignments": [invalid_retired],
+        }))
+        self.assertTrue(ledger_validator.is_valid({
+            "artifactType": "test_image_assignment_ledger",
+            "schemaVersion": "3.0.0",
+            "producer": "style-template-analyzer",
+            "assignments": [invalid_retired],
+        }))
         self.validate("cover-generation-receipt.schema.json", {
             "artifactType": "cover_generation_receipt",
             "schemaVersion": "1.0.0",
@@ -271,6 +298,40 @@ class V3SchemaTests(unittest.TestCase):
             with self.assertRaisesRegex(TestPoolError, "upstream_test_image_pool_is_read_only"):
                 pool.save(pool_file, ledger_file)
             self.assertEqual(pool_file.read_bytes(), original_pool)
+
+    def test_runtime_reads_legacy_v3_ledger_with_historical_loose_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset = self.asset()
+            pool_file = root / "pool.json"
+            pool_file.write_text(json.dumps({
+                "artifactType": "style_test_image_pool",
+                "schemaVersion": "1.1.0",
+                "producer": "style-template-analyzer",
+                "assets": [asset],
+            }), encoding="utf-8")
+            ledger_file = root / "ledger.json"
+            ledger_file.write_text(json.dumps({
+                "artifactType": "test_image_assignment_ledger",
+                "schemaVersion": "3.0.0",
+                "producer": "style-template-analyzer",
+                "assignments": [{
+                    "artifactType": "test_image_assignment",
+                    "schemaVersion": "3.0.0",
+                    "producer": "style-template-analyzer",
+                    "deliverySetId": "legacy-delivery",
+                    "templateKey": "legacy-style",
+                    "revision": 1,
+                    "assetId": asset["assetId"],
+                    "assignedAt": "2026-08-21T00:00:00Z",
+                    "status": "released",
+                }],
+            }), encoding="utf-8")
+
+            loaded = TestImagePool.load(pool_file, ledger_file)
+
+            self.assertEqual(loaded.assignment_ledger_version, "3.0.0")
+            self.assertEqual(loaded.assignments[0]["status"], "released")
 
 
 if __name__ == "__main__":

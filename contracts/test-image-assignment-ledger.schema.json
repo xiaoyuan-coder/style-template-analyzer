@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://memebuy.local/contracts/style-test-image-assignment-ledger.schema.json",
-  "title": "StyleTestImageAssignmentLedgerV3",
+  "title": "StyleTestImageAssignmentLedgerV4",
   "type": "object",
   "additionalProperties": false,
   "required": ["artifactType", "schemaVersion", "producer", "assignments"],
   "properties": {
     "artifactType": {"const": "test_image_assignment_ledger"},
-    "schemaVersion": {"enum": ["1.0.0", "2.0.0", "3.0.0"]},
+    "schemaVersion": {"enum": ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]},
     "producer": {"const": "style-template-analyzer"},
     "assignments": {
       "type": "array",
@@ -15,11 +15,29 @@
         "oneOf": [
           {"$ref": "#/$defs/legacyAssignment"},
           {"$ref": "#/$defs/currentAssignment"},
-          {"$ref": "#/$defs/retiredAssignment"}
+          {"$ref": "#/$defs/retiredAssignmentV3"}
         ]
       }
     }
   },
+  "allOf": [
+    {
+      "if": {"properties": {"schemaVersion": {"const": "4.0.0"}}},
+      "then": {
+        "properties": {
+          "assignments": {
+            "items": {
+              "oneOf": [
+                {"$ref": "#/$defs/legacyAssignment"},
+                {"$ref": "#/$defs/currentAssignment"},
+                {"$ref": "#/$defs/retiredAssignmentV4"}
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "identity": {
       "type": "object",
@@ -76,7 +94,7 @@
         }
       ]
     },
-    "retiredAssignment": {
+    "retiredAssignmentV3": {
       "allOf": [
         {"$ref": "#/$defs/identity"},
         {
@@ -98,6 +116,9 @@
           }
         }
       ]
+    },
+    "retiredAssignmentV4": {
+      "$ref": "https://memebuy.local/contracts/style-test-image-assignment.schema.json"
     }
   }
 }

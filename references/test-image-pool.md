@@ -46,7 +46,7 @@ ready → reserved → awaiting_approval → released
 - `released`：人工 Reject、模板退役或明确释放；解除当前模板占用，并在后续新批次恢复可分配。
 - `consumed`：人工 Pass 后在模板活动期间退出可用容量；人工退役该模板时显式转为 `released`。
 
-普通生产 assignment 使用 2.0.0。退役会产生 3.0.0 的 released assignment：`decision.verdict=template_retired`，原有人工通过或释放决定保存在 `previousDecision`；ledger 外层随之升级为 3.0.0，并继续兼容读取 v1/v2 记录。
+普通生产 assignment 使用 2.0.0。退役会产生 3.0.0 的 released assignment：`decision.verdict=template_retired`，原有人工通过或释放决定保存在 `previousDecision`；持久化写入会把 ledger 外层升级为 4.0.0，并继续兼容读取外层 v1/v2/v3 记录。外层 v4 对退役决定执行严格合同校验，外层 v3 保留历史宽松读取语义。
 
 模板退役通过统一命令登记并释放，不手工分别改写索引和 ledger：
 
@@ -55,9 +55,12 @@ python scripts/style_workflow_cli.py retire-template \
   --template-key <key> \
   --reason <人工退役理由> \
   --registry <已退役模板索引.json> \
+  --catalog <统一通过模板索引.json> \
   --pool <pool.json> \
   --ledger <assignment-ledger.json>
 ```
+
+`--registry` 必须指向 `--catalog` 同目录的 `已退役模板索引.json`。命令在共享生命周期锁内先校验全部输入，再登记退役、刷新活动 catalog 并释放 ledger 占用；只有三者全部完成才返回成功。后续步骤失败时回滚 registry 与 catalog，使用相同参数可安全重试。
 
 唯一性按全局 ledger 计算，跨 `deliverySetId` 也不得并发复用。同一 `deliverySetId` 内按完整分配历史去重：已释放图片仍不可分配给该批次的其他模板或返工 revision；进入新的 `deliverySetId` 后才恢复候选资格。历史 v1 `committed` 记录按 `legacyHeld` 安全占用，只能依据人工决策表迁移。
 

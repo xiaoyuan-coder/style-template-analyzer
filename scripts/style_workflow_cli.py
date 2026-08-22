@@ -13,7 +13,7 @@ from typing import Any
 from style_experience_store import DurableExperienceStore, ExperienceStoreError
 from style_dynamic_baseline import DynamicBaselineCatalog, DynamicBaselineError
 from style_reference_gate import validate_reference_interpretation
-from style_retirement import RetirementRegistryError, register_retirement
+from style_retirement import RetirementRegistryError, retire_template_transaction
 from style_review_workflow import ReviewWorkflowError, compile_reference, record_review_decision
 from style_test_pool import TestImagePool, TestPoolError
 
@@ -118,6 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     retire.add_argument("--template-key", required=True)
     retire.add_argument("--reason", required=True)
     retire.add_argument("--registry", type=Path, required=True)
+    retire.add_argument("--catalog", type=Path, required=True)
     retire.add_argument("--pool", type=Path, required=True)
     retire.add_argument("--ledger", type=Path, required=True)
     return parser
@@ -162,17 +163,19 @@ def main(argv: list[str] | None = None) -> int:
             snapshot, _ = DynamicBaselineCatalog(args.catalog).load_active()
             return _emit({"ok": True, "snapshot": snapshot})
         if args.command == "retire-template":
-            retirement = register_retirement(args.registry, args.template_key, args.reason)
             pool = TestImagePool.load(args.pool, args.ledger)
-            released = pool.retire_template_persisted(
-                args.template_key,
+            retirement, removed_catalog_entries, released = retire_template_transaction(
+                pool,
                 args.ledger,
-                reason=f"模板退役：{args.reason}",
-                decided_at=retirement.get("retiredAt"),
+                args.registry,
+                args.catalog,
+                args.template_key,
+                args.reason,
             )
             return _emit({
                 "ok": True,
                 "retirement": retirement,
+                "removedCatalogEntries": removed_catalog_entries,
                 "releasedAssetIds": sorted({item["assetId"] for item in released}),
             })
         store = DurableExperienceStore(args.experience_root)

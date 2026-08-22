@@ -1,6 +1,6 @@
 # style-template-analyzer
 
-`style-template-analyzer` 是风格化模板生产 Skill 的独立源码仓库。仓库根目录同时也是 Skill 根目录，当前版本为 `7.8.0`。
+`style-template-analyzer` 是风格化模板生产 Skill 的独立源码仓库。仓库根目录同时也是 Skill 根目录，当前版本为 `7.8.1`。
 
 ## 目录职责
 
