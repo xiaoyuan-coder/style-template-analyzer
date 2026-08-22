@@ -1,20 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://memebuy.local/contracts/style-test-image-assignment-ledger.schema.json",
-  "title": "StyleTestImageAssignmentLedgerV2",
+  "title": "StyleTestImageAssignmentLedgerV3",
   "type": "object",
   "additionalProperties": false,
   "required": ["artifactType", "schemaVersion", "producer", "assignments"],
   "properties": {
     "artifactType": {"const": "test_image_assignment_ledger"},
-    "schemaVersion": {"enum": ["1.0.0", "2.0.0"]},
+    "schemaVersion": {"enum": ["1.0.0", "2.0.0", "3.0.0"]},
     "producer": {"const": "style-template-analyzer"},
     "assignments": {
       "type": "array",
       "items": {
         "oneOf": [
           {"$ref": "#/$defs/legacyAssignment"},
-          {"$ref": "#/$defs/currentAssignment"}
+          {"$ref": "#/$defs/currentAssignment"},
+          {"$ref": "#/$defs/retiredAssignment"}
         ]
       }
     }
@@ -71,6 +72,29 @@
             "status": {"enum": ["reserved", "awaiting_approval", "released", "consumed"]},
             "reviewReadyAt": {"type": "string", "minLength": 1},
             "decision": {"type": "object"}
+          }
+        }
+      ]
+    },
+    "retiredAssignment": {
+      "allOf": [
+        {"$ref": "#/$defs/identity"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "artifactType": true,
+            "schemaVersion": {"const": "3.0.0"},
+            "producer": true,
+            "deliverySetId": true,
+            "templateKey": true,
+            "revision": true,
+            "assetId": true,
+            "assignedAt": true,
+            "status": {"const": "released"},
+            "reviewReadyAt": {"type": "string", "minLength": 1},
+            "decision": {"type": "object"},
+            "previousDecision": {"type": "object"}
           }
         }
       ]

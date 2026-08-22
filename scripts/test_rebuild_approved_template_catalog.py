@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rebuild_approved_template_catalog import ApprovedEntry, CatalogError, publish_entry
+from rebuild_approved_template_catalog import ApprovedEntry, CatalogError, load_retired_keys, publish_entry
 
 
 class ApprovedCatalogMigrationTests(unittest.TestCase):
@@ -64,6 +64,21 @@ class ApprovedCatalogMigrationTests(unittest.TestCase):
         (output / "sample-style/1/package/cover.png").write_bytes(b"changed")
         with self.assertRaisesRegex(CatalogError, "destination_conflict"):
             publish_entry(self.entry(), output, self.root, "2026-08-20T00:00:01+00:00")
+
+    def test_retirement_registry_is_authoritative_for_future_rebuilds(self) -> None:
+        output = self.root / "approved"
+        output.mkdir()
+        registry = {
+            "artifactType": "style_template_retirement_registry",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer",
+            "items": [{"templateKey": "sample-style"}],
+        }
+        (output / "已退役模板索引.json").write_text(
+            json.dumps(registry, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self.assertEqual(load_retired_keys(output), {"sample-style"})
 
 
 if __name__ == "__main__":

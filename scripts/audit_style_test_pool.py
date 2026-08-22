@@ -25,6 +25,16 @@ def audit(pool_file: Path, ledger_file: Path) -> dict[str, object]:
         for asset_id, identities in sorted(identities_by_asset.items())
         if len(identities) > 1
     }
+    history_by_delivery_asset: dict[str, list[str]] = defaultdict(list)
+    for item in pool.assignments:
+        history_by_delivery_asset[f"{item['deliverySetId']}:{item['assetId']}"].append(
+            f"{item['templateKey']}:{item['revision']}:{item['status']}"
+        )
+    historical_reuse = {
+        identity: assignments
+        for identity, assignments in sorted(history_by_delivery_asset.items())
+        if len(assignments) > 1
+    }
     statuses = Counter(str(item.get("status")) for item in pool.assignments)
     return {
         "artifactType": "style_test_pool_audit",
@@ -37,6 +47,8 @@ def audit(pool_file: Path, ledger_file: Path) -> dict[str, object]:
         "assignmentStatuses": dict(sorted(statuses.items())),
         "duplicateActiveAssetCount": len(duplicates),
         "duplicateActiveAssets": duplicates,
+        "sameDeliverySetHistoricalReuseCount": len(historical_reuse),
+        "sameDeliverySetHistoricalReuse": historical_reuse,
         "migrationRequired": any(item.get("schemaVersion") == "1.0.0" for item in pool.assignments),
     }
 
@@ -52,4 +64,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

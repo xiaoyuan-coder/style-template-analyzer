@@ -13,6 +13,7 @@ from typing import Any
 from style_experience_store import DurableExperienceStore, ExperienceStoreError
 from style_dynamic_baseline import DynamicBaselineCatalog, DynamicBaselineError
 from style_reference_gate import validate_reference_interpretation
+from style_retirement import RetirementRegistryError, register_retirement
 from style_review_workflow import ReviewWorkflowError, compile_reference, record_review_decision
 from style_test_pool import TestImagePool, TestPoolError
 
@@ -112,6 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     audit_baseline = subparsers.add_parser("audit-baseline", help="校验动态基线并报告当前有效模板")
     audit_baseline.add_argument("catalog", type=Path, nargs="?", default=DEFAULT_BASELINE_CATALOG)
+
+    retire = subparsers.add_parser("retire-template", help="登记人工退役并释放该模板占用的测试图")
+    retire.add_argument("--template-key", required=True)
+    retire.add_argument("--reason", required=True)
+    retire.add_argument("--registry", type=Path, required=True)
+    retire.add_argument("--pool", type=Path, required=True)
+    retire.add_argument("--ledger", type=Path, required=True)
     return parser
 
 
@@ -153,9 +161,31 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "audit-baseline":
             snapshot, _ = DynamicBaselineCatalog(args.catalog).load_active()
             return _emit({"ok": True, "snapshot": snapshot})
+        if args.command == "retire-template":
+            retirement = register_retirement(args.registry, args.template_key, args.reason)
+            pool = TestImagePool.load(args.pool, args.ledger)
+            released = pool.retire_template_persisted(
+                args.template_key,
+                args.ledger,
+                reason=f"模板退役：{args.reason}",
+                decided_at=retirement.get("retiredAt"),
+            )
+            return _emit({
+                "ok": True,
+                "retirement": retirement,
+                "releasedAssetIds": sorted({item["assetId"] for item in released}),
+            })
         store = DurableExperienceStore(args.experience_root)
         return _emit({"ok": True, "snapshot": store.load_fresh_snapshot()})
-    except (OSError, json.JSONDecodeError, ReviewWorkflowError, TestPoolError, ExperienceStoreError, DynamicBaselineError) as error:
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ReviewWorkflowError,
+        TestPoolError,
+        ExperienceStoreError,
+        DynamicBaselineError,
+        RetirementRegistryError,
+    ) as error:
         print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 1
 

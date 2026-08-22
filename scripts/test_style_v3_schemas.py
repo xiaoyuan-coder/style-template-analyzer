@@ -81,7 +81,25 @@ class V3SchemaTests(unittest.TestCase):
             "decisionLog": "/tmp/screening-decisions.json",
             "assets": [],
         })
-        self.validate("test-image-assignment.schema.json", assignment)
+        self.validate("test-image-assignment-v2.schema.json", assignment)
+        pool.mark_awaiting_approval("delivery-1", "fixture-style", 1)
+        pool.consume(
+            "delivery-1",
+            "fixture-style",
+            1,
+            cover_sha256="a" * 64,
+            prompt_sha256="b" * 64,
+            reason="人工通过",
+        )
+        retired = pool.retire_template("fixture-style", reason="人工退役")[0]
+        self.validate("test-image-assignment.schema.json", retired)
+        self.validate("test-image-assignment-ledger.schema.json", {
+            "artifactType": "test_image_assignment_ledger",
+            "schemaVersion": "3.0.0",
+            "producer": "style-template-analyzer",
+            "assignments": [retired],
+        })
+        self.assertEqual(retired["previousDecision"]["verdict"], "pass")
         self.validate("cover-generation-receipt.schema.json", {
             "artifactType": "cover_generation_receipt",
             "schemaVersion": "1.0.0",

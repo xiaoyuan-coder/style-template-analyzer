@@ -28,6 +28,7 @@ class AuditStyleTestPoolTests(unittest.TestCase):
             self.assertEqual(result["capacity"]["catalogReady"], 2)
             self.assertEqual(result["capacity"]["ready"], 1)
             self.assertEqual(result["assignmentCount"], 1)
+            self.assertEqual(result["sameDeliverySetHistoricalReuseCount"], 0)
             self.assertFalse(result["migrationRequired"])
 
 

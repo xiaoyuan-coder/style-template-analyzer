@@ -17,6 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from style_retirement import (
+    RETIREMENT_REGISTRY_NAME,
+    RetirementRegistryError,
+    load_retired_keys as read_retired_keys,
+)
+
 
 PRODUCER = "style-template-analyzer"
 CATALOG_SCHEMA_VERSION = "2.0.0"
@@ -26,8 +32,6 @@ EXPECTED_COUNTS = {
     "legacy-batch-human-pass": 43,
     "v5-human-pass": 7,
 }
-
-
 class CatalogError(RuntimeError):
     pass
 
@@ -223,6 +227,13 @@ def collect_entries(data_root: Path) -> list[ApprovedEntry]:
     return entries
 
 
+def load_retired_keys(output_root: Path) -> set[str]:
+    try:
+        return read_retired_keys(output_root / RETIREMENT_REGISTRY_NAME)
+    except RetirementRegistryError as error:
+        raise CatalogError(str(error)) from error
+
+
 def publish_entry(entry: ApprovedEntry, output_root: Path, data_root: Path, generated_at: str) -> None:
     if entry.existing_revision_root is not None:
         destination = entry.existing_revision_root
@@ -354,6 +365,8 @@ def run(data_root: Path, apply: bool) -> dict[str, Any]:
     data_root = data_root.resolve()
     output_root = data_root / "05-风格化模板生产/04-研发交付/已通过正式模板包"
     entries = collect_entries(data_root)
+    retired_keys = load_retired_keys(output_root)
+    entries = [entry for entry in entries if entry.key not in retired_keys]
     generated_at = datetime.now(timezone.utc).isoformat()
     if apply:
         output_root.mkdir(parents=True, exist_ok=True)
@@ -368,6 +381,7 @@ def run(data_root: Path, apply: bool) -> dict[str, Any]:
         "schemaVersion": MIGRATION_SCHEMA_VERSION,
         "producer": PRODUCER,
         "templateCount": len(entries),
+        "retiredTemplateCount": len(retired_keys),
         "approvalProvenanceCounts": {
             name: sum(item.approval_provenance == name for item in entries) for name in EXPECTED_COUNTS
         },

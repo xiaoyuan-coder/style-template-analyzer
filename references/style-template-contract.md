@@ -13,7 +13,7 @@
 
 ## 1. 文件职责
 
-每个已完成 revision 使用公开最终包与内部证据分层：
+每个已完成 revision 使用正式版本与内部证据分层，并从中导出单文件交付：
 
 ```text
 <revision>/
@@ -28,10 +28,14 @@
     ├── cover-check-receipt.json
     ├── approval-decision-receipt.json
     └── oss-finalization-receipt.json
+
+<delivery>/
+└── <key>.json
 ```
 
-- `package/` 是唯一对用户交付的模板包，严格只含两个文件。
+- `package/` 是正式 revision 的可追溯运行包，严格只含两个文件。
 - `style-template.json` 保存研发运行字段，其 `cover` 已回填受控 OSS URL，遵循 `style-template-import.schema.json`。
+- `<delivery>/<key>.json` 复制正式 `style-template.json` 的官方字段形状，文件名与 JSON 内 `key` 完全一致，是唯一最终下游交付文件。
 - `internal/` 保存取证、唯一测试图分配、封面生成、轻量检查和 OSS 最终化回执；自生产 revision 另含基线快照。
 - `artifact-manifest.json` 声明 `review-package` 或 `final-package` 阶段、产物类型、三段式版本、producer 和 SHA-256，遵循 `contracts/artifact-manifest.schema.json`。
 - `style-evaluation.json` 由完整真图评测阶段单独产生，不进入最终模板包。
@@ -179,7 +183,7 @@ validator 要求 `promptTemplate` 同时包含：
 }
 ```
 
-第一种状态放在 `review-package/`，第二种状态放在 `package/`；两个公开目录都严格只含 JSON 与封面。`cover` 按 SHA-256 去重上传，OSS 失败或最终契约失败时不发布正式 revision，保留已通过审核包供恢复。
+第一种状态放在 `review-package/`，第二种状态放在正式 revision 的 `package/`；两个目录都严格只含 JSON 与封面。正式 revision 通过后再导出 `<key>.json`，下游不接收本地 `cover.png`。`cover` 按 SHA-256 去重上传，OSS 失败或最终契约失败时不发布正式 revision，也不导出交付 JSON；保留已通过审核包供恢复。
 
 自生产的候选审批图只提供离线设计证据。当用户选中总览外候选、首版或同 key 的其他视觉 revision 时，最终编译使用精确封面 SHA 绑定的批准专用规格；运行时仍只提交用户 `source` 和冻结后的 `promptTemplate`。
 

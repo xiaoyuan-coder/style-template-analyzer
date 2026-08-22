@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -17,7 +18,8 @@ class CurrentDynamicBaselineTests(unittest.TestCase):
         if not catalog.catalog_file.is_file():
             self.skipTest("业务总库未挂载；跳过动态基线真实数据回归")
         snapshot, templates = catalog.load_active()
-        self.assertGreaterEqual(snapshot["count"], 144)
+        catalog_data = json.loads(catalog.catalog_file.read_text(encoding="utf-8"))
+        self.assertEqual(snapshot["count"], catalog_data["templateCount"])
         self.assertEqual(len(templates), snapshot["count"])
 
 

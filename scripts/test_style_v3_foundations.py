@@ -165,6 +165,42 @@ class TestImagePoolTests(unittest.TestCase):
         new = pool.assign("delivery-1", "template-a", 2)
         self.assertNotEqual(old["assetId"], new["assetId"])
 
+    def test_released_asset_is_not_reused_inside_the_same_delivery_set(self) -> None:
+        pool = TestImagePool([
+            self.asset("asset-a", "a" * 64, "0" * 16),
+            self.asset("asset-b", "b" * 64, "f" * 16),
+        ])
+        first = pool.reserve("delivery-1", "template-a", 1)
+        pool.mark_awaiting_approval("delivery-1", "template-a", 1)
+        pool.release(
+            "delivery-1",
+            "template-a",
+            1,
+            verdict="reject",
+            authority="human",
+            reason="fixture reject",
+        )
+        second = pool.reserve("delivery-1", "template-a", 2)
+        self.assertNotEqual(first["assetId"], second["assetId"])
+        self.assertEqual(pool.capacity("delivery-1"), 0)
+
+    def test_released_asset_can_be_used_by_a_later_delivery_set(self) -> None:
+        pool = TestImagePool([
+            self.asset("asset-a", "a" * 64, "0" * 16),
+        ])
+        first = pool.reserve("delivery-1", "template-a", 1)
+        pool.mark_awaiting_approval("delivery-1", "template-a", 1)
+        pool.release(
+            "delivery-1",
+            "template-a",
+            1,
+            verdict="reject",
+            authority="human",
+            reason="fixture reject",
+        )
+        second = pool.reserve("delivery-2", "template-b", 1)
+        self.assertEqual(first["assetId"], second["assetId"])
+
     def test_persisted_reservations_are_unique_across_pool_instances(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ledger = Path(directory) / "ledger.json"

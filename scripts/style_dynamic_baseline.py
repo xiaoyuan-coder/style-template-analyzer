@@ -8,13 +8,21 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from style_atomic import atomic_write_json
 from style_baseline import validate_baseline_snapshot
 from style_contracts import PRODUCER, read_json, sha256_file
+from style_retirement import (
+    RETIREMENT_REGISTRY_NAME,
+    RetirementRegistryError,
+    lifecycle_lock,
+    load_retired_keys,
+)
 
 
 class DynamicBaselineError(RuntimeError):
@@ -28,19 +36,6 @@ def _now() -> str:
 def _digest_entries(entries: list[dict[str, Any]]) -> str:
     canonical = json.dumps(entries, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def _atomic_json(path: Path, value: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as output:
-            output.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
-        os.replace(temporary, path)
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        raise
 
 
 @contextmanager
@@ -86,6 +81,8 @@ class DynamicBaselineCatalog:
         self.catalog_file = source
         self.root = self.catalog_file.parent
         self.lock_file = self.root / ".dynamic-baseline.lock"
+        self._lifecycle_guard_state = threading.local()
+        self._process_lifecycle_lock = threading.RLock()
 
     def _read_catalog(self) -> dict[str, Any]:
         if not self.catalog_file.is_file():
@@ -100,8 +97,35 @@ class DynamicBaselineCatalog:
             raise DynamicBaselineError("dynamic_baseline_catalog_invalid")
         return catalog
 
+    def _retired_keys(self) -> set[str]:
+        try:
+            return load_retired_keys(self.root / RETIREMENT_REGISTRY_NAME)
+        except RetirementRegistryError as error:
+            raise DynamicBaselineError(str(error)) from error
+
+    @contextmanager
+    def approval_guard(self, template_key: str):
+        """Hold the retirement/promotion boundary for one human-pass transaction."""
+        depth = getattr(self._lifecycle_guard_state, "depth", 0)
+        if depth:
+            if template_key in self._retired_keys():
+                raise DynamicBaselineError("dynamic_baseline_template_retired")
+            yield
+            return
+        registry = self.root / RETIREMENT_REGISTRY_NAME
+        with self._process_lifecycle_lock:
+            with lifecycle_lock(registry):
+                if template_key in self._retired_keys():
+                    raise DynamicBaselineError("dynamic_baseline_template_retired")
+                self._lifecycle_guard_state.depth = 1
+                try:
+                    yield
+                finally:
+                    self._lifecycle_guard_state.depth = 0
+
     def load_active(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         catalog = self._read_catalog()
+        retired_keys = self._retired_keys()
         active: dict[str, dict[str, Any]] = {}
         for item in catalog["items"]:
             if not isinstance(item, dict) or item.get("verdict") != "pass":
@@ -110,6 +134,8 @@ class DynamicBaselineCatalog:
             revision = item.get("revision")
             if not isinstance(key, str) or not isinstance(revision, int):
                 raise DynamicBaselineError("dynamic_baseline_entry_invalid")
+            if key in retired_keys:
+                continue
             previous = active.get(key)
             if previous is None or revision > previous["revision"]:
                 active[key] = item
@@ -155,7 +181,7 @@ class DynamicBaselineCatalog:
             raise DynamicBaselineError(errors[0])
         return snapshot, templates
 
-    def __call__(self, event: dict[str, Any]) -> dict[str, Any]:
+    def __call__(self, event: dict[str, Any], *, _lifecycle_guarded: bool = False) -> dict[str, Any]:
         decision = event.get("decision")
         review_root = Path(str(event.get("reviewRoot", ""))).resolve()
         if not isinstance(decision, dict) or decision.get("verdict") != "pass":
@@ -171,6 +197,9 @@ class DynamicBaselineCatalog:
         revision = decision.get("revision")
         if template.get("key") != key or not isinstance(revision, int):
             raise DynamicBaselineError("dynamic_baseline_source_identity_mismatch")
+        if not _lifecycle_guarded:
+            with self.approval_guard(str(key)):
+                return self(event, _lifecycle_guarded=True)
         template_digest = sha256_file(template_file)
         cover_digest = sha256_file(cover_file)
         target = self.root / key / str(revision)
@@ -221,7 +250,7 @@ class DynamicBaselineCatalog:
                                 {"path": "internal/approval-decision-receipt.json", "sha256": sha256_file(approval_file)},
                             ],
                         }
-                        _atomic_json(temporary / "artifact-manifest.json", manifest)
+                        atomic_write_json(temporary / "artifact-manifest.json", manifest)
                         os.replace(temporary, target)
                     except Exception:
                         shutil.rmtree(temporary, ignore_errors=True)
@@ -255,11 +284,11 @@ class DynamicBaselineCatalog:
                 oss_counts = catalog.setdefault("ossStatusCounts", {})
                 for status in ("finalized", "awaiting-finalization"):
                     oss_counts[status] = sum(value.get("ossStatus") == status for value in catalog["items"])
-                _atomic_json(self.catalog_file, catalog)
+                atomic_write_json(self.catalog_file, catalog)
             mirror = self.root / (
                 "已通过模板清单.json" if self.catalog_file.name == "统一通过模板索引.json" else "统一通过模板索引.json"
             )
-            _atomic_json(mirror, catalog)
+            atomic_write_json(mirror, catalog)
             snapshot, _ = self.load_active()
         return {
             "catalog": self.catalog_file.as_posix(),

@@ -16,6 +16,7 @@ from typing import Any, Callable
 from PIL import Image
 
 from style_baseline import verify_approval_descriptor
+from style_atomic import atomic_write_json
 from style_contracts import build_manifest, read_json, sha256_file
 from style_dynamic_baseline import DynamicBaselineCatalog, DynamicBaselineError
 from style_experience_store import DurableExperienceStore, ExperienceStoreError
@@ -163,6 +164,26 @@ def _review_root(run_root: Path, key: str, revision: int) -> Path:
 
 def _final_root(run_root: Path, key: str, revision: int) -> Path:
     return run_root.resolve() / key / str(revision)
+
+
+def _publish_delivery(
+    final_root: Path,
+    run_root: Path,
+    key: str,
+    assets_domain: str,
+    key_prefix: str,
+) -> Path:
+    final_data = read_json(final_root / "package" / "style-template.json")
+    delivery = run_root.resolve() / "delivery" / f"{key}.json"
+    errors = validate_template(final_data, delivery, "remote", assets_domain.lower(), key_prefix)
+    if errors:
+        raise ReviewWorkflowError(f"delivery_validation_failed: {'; '.join(errors)}")
+    atomic_write_json(delivery, final_data)
+    atomic_write_json(
+        delivery.parent / "artifact-manifest.json",
+        build_manifest(delivery.parent, "handoff"),
+    )
+    return delivery
 
 
 def create_review_package(
@@ -444,6 +465,7 @@ def record_review_decision(
     *,
     experience_sink: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
     baseline_sink: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
+    _lifecycle_guarded: bool = False,
 ) -> dict[str, Any]:
     if verdict not in {"pass", "reject", "pending", "manual_release"}:
         raise ReviewWorkflowError("review_verdict_invalid")
@@ -462,6 +484,23 @@ def record_review_decision(
     cover_sha = sha256_file(review_root / "review-package" / "cover.png")
     prompt_sha = _prompt_sha256(template_data)
     identity = (assignment["deliverySetId"], assignment["templateKey"], assignment["revision"])
+    if verdict == "pass" and not _lifecycle_guarded:
+        approval_guard = getattr(baseline_sink, "approval_guard", None)
+        if callable(approval_guard):
+            try:
+                with approval_guard(identity[1]):
+                    return record_review_decision(
+                        review_root,
+                        verdict,
+                        reason,
+                        pool,
+                        ledger_file,
+                        experience_sink=experience_sink,
+                        baseline_sink=baseline_sink,
+                        _lifecycle_guarded=True,
+                    )
+            except DynamicBaselineError as error:
+                raise ReviewWorkflowError(f"dynamic_baseline_registration_failed: {error}") from error
     existing_receipt_file = review_root / "internal" / "approval-decision-receipt.json"
     if assignment.get("status") in {"consumed", "released"}:
         existing_receipt = read_json(existing_receipt_file) if existing_receipt_file.is_file() else {}
@@ -725,10 +764,12 @@ def finalize_approved(
         final_errors, _ = validate_package(final_root, "final-package", "remote", assets_domain.lower(), key_prefix)
         if final_errors:
             raise ReviewWorkflowError(f"final_package_validation_failed: {'; '.join(final_errors)}")
+        delivery = _publish_delivery(final_root, run_root, key, assets_domain, key_prefix)
         return {
             "status": "completed",
             "revisionRoot": final_root.as_posix(),
             "package": (final_root / "package").as_posix(),
+            "delivery": delivery.as_posix(),
             "assetId": assignment["assetId"],
             "idempotent": True,
         }
@@ -775,10 +816,12 @@ def finalize_approved(
         if final_errors:
             raise ReviewWorkflowError(f"final_package_validation_failed: {'; '.join(final_errors)}")
         os.replace(temporary, final_root)
+        delivery = _publish_delivery(final_root, run_root, key, assets_domain, key_prefix)
         return {
             "status": "completed",
             "revisionRoot": final_root.as_posix(),
             "package": (final_root / "package").as_posix(),
+            "delivery": delivery.as_posix(),
             "assetId": assignment["assetId"],
             "idempotent": False,
         }

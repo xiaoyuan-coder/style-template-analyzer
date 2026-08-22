@@ -6,11 +6,12 @@ from __future__ import annotations
 import base64
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
 from style_contracts import sha256_file
-from style_dynamic_baseline import DynamicBaselineCatalog
+from style_dynamic_baseline import DynamicBaselineCatalog, DynamicBaselineError
 from test_validate_style_template import template
 
 
@@ -70,6 +71,34 @@ def add_catalog_package(root: Path, key: str, title: str, revision: int) -> dict
 
 
 class DynamicBaselineTests(unittest.TestCase):
+    def test_lifecycle_guard_is_reentrant_per_thread_and_serializes_other_threads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = DynamicBaselineCatalog(catalog(root))
+            first_entered = threading.Event()
+            release_first = threading.Event()
+            second_entered = threading.Event()
+
+            def first() -> None:
+                with store.approval_guard("ink-outline"):
+                    first_entered.set()
+                    release_first.wait(1)
+
+            def second() -> None:
+                with store.approval_guard("ink-outline"):
+                    second_entered.set()
+
+            first_thread = threading.Thread(target=first)
+            second_thread = threading.Thread(target=second)
+            first_thread.start()
+            self.assertTrue(first_entered.wait(1))
+            second_thread.start()
+            self.assertFalse(second_entered.wait(0.05))
+            release_first.set()
+            first_thread.join(1)
+            second_thread.join(1)
+            self.assertTrue(second_entered.is_set())
+
     def test_active_snapshot_uses_latest_passed_revision_per_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -111,6 +140,52 @@ class DynamicBaselineTests(unittest.TestCase):
             self.assertTrue(second["idempotent"])
             self.assertEqual(store.load_active()[0]["count"], 1)
             self.assertTrue((root / "ink-outline/1/package/style-template.json").is_file())
+
+    def test_retired_key_cannot_be_promoted_again(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog_file = catalog(root)
+            write_json(root / "已退役模板索引.json", {
+                "artifactType": "style_template_retirement_registry",
+                "schemaVersion": "1.0.0",
+                "producer": "style-template-analyzer",
+                "items": [{"templateKey": "ink-outline"}],
+            })
+            review = root / "review-source"
+            public = review / "review-package"
+            internal = review / "internal"
+            public.mkdir(parents=True)
+            internal.mkdir()
+            data = template()
+            data["key"] = "ink-outline"
+            data["title"] = "墨线重绘"
+            data["cover"] = "cover.png"
+            write_json(public / "style-template.json", data)
+            (public / "cover.png").write_bytes(PNG)
+            decision = {"templateKey": "ink-outline", "revision": 1, "verdict": "pass"}
+            write_json(internal / "approval-decision-receipt.json", decision)
+            with self.assertRaisesRegex(DynamicBaselineError, "dynamic_baseline_template_retired"):
+                DynamicBaselineCatalog(catalog_file)({"reviewRoot": review.as_posix(), "decision": decision})
+
+    def test_active_snapshot_excludes_keys_already_in_retirement_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            items = [
+                add_catalog_package(root, "ink-outline", "墨线重绘", 1),
+                add_catalog_package(root, "paper-cutout", "纸感贴画", 1),
+            ]
+            catalog_file = catalog(root, items)
+            write_json(root / "已退役模板索引.json", {
+                "artifactType": "style_template_retirement_registry",
+                "schemaVersion": "1.0.0",
+                "producer": "style-template-analyzer",
+                "items": [{"templateKey": "ink-outline"}],
+            })
+
+            snapshot, templates = DynamicBaselineCatalog(catalog_file).load_active()
+
+            self.assertEqual(snapshot["count"], 1)
+            self.assertEqual([item["key"] for item in templates], ["paper-cutout"])
 
 
 if __name__ == "__main__":

@@ -18,6 +18,8 @@ from style_review_workflow import (
     record_review_decision,
     route_workflow,
 )
+from style_dynamic_baseline import DynamicBaselineCatalog
+from style_retirement import register_retirement
 from test_style_reference_gate import interpretation, visual_gate
 from style_test_pool import TestImagePool, TestPoolError, normalize_asset
 from test_validate_style_analysis import analysis
@@ -247,6 +249,18 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         final_root = Path(final["revisionRoot"])
         errors, _ = validate_package(final_root, "final-package", "remote", "assets.example.com", "")
         self.assertEqual(errors, [])
+        delivery_file = (self.root / "runs" / "delivery" / f"{template()['key']}.json").resolve()
+        self.assertEqual(final["delivery"], delivery_file.as_posix())
+        self.assertEqual(
+            json.loads(delivery_file.read_text(encoding="utf-8")),
+            json.loads((final_root / "package" / "style-template.json").read_text(encoding="utf-8")),
+        )
+        delivery_manifest = json.loads(
+            (delivery_file.parent / "artifact-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(delivery_manifest["stage"], "handoff")
+        self.assertEqual(delivery_manifest["artifacts"][0]["path"], delivery_file.name)
+        delivery_file.unlink()
         again = finalize_approved(
             Path(review["reviewRoot"]),
             self.root / "runs",
@@ -254,7 +268,47 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
             assets_domain="assets.example.com",
         )
         self.assertTrue(again["idempotent"])
+        self.assertEqual(again["delivery"], delivery_file.as_posix())
+        self.assertTrue(delivery_file.is_file())
         self.assertEqual(oss.calls, 1)
+
+    def test_retired_template_is_rejected_before_pass_mutates_review_or_ledger(self) -> None:
+        review = self.create_review()
+        baseline_root = self.root / "baseline"
+        baseline_root.mkdir()
+        catalog_file = baseline_root / "统一通过模板索引.json"
+        write_json(catalog_file, {
+            "artifactType": "style_template_delivery_catalog",
+            "schemaVersion": "2.0.0",
+            "producer": "style-template-analyzer",
+            "items": [],
+        })
+        register_retirement(
+            baseline_root / "已退役模板索引.json",
+            template()["key"],
+            "人工决定退役",
+        )
+
+        with self.assertRaisesRegex(
+            ReviewWorkflowError,
+            "dynamic_baseline_registration_failed: dynamic_baseline_template_retired",
+        ):
+            record_review_decision(
+                Path(review["reviewRoot"]),
+                "pass",
+                "人工验收通过",
+                self.pool,
+                self.ledger,
+                experience_sink=self.experience_sink,
+                baseline_sink=DynamicBaselineCatalog(catalog_file),
+            )
+
+        assignment = json.loads(self.ledger.read_text(encoding="utf-8"))["assignments"][0]
+        self.assertEqual(assignment["status"], "awaiting_approval")
+        self.assertFalse(
+            (Path(review["reviewRoot"]) / "internal" / "approval-decision-receipt.json").exists()
+        )
+        self.assertEqual(self.experience_events, [])
 
     def test_experience_deposit_failure_blocks_completion_and_can_retry(self) -> None:
         review = self.create_review()

@@ -1,6 +1,6 @@
 ---
 name: style-template-analyzer
-description: 把参考图编译为 prompt-only 风格模板审核包，或基于已批准基线、GoodCase 和 BadCase 自主生产新模板；消费人工准入的高认知测试图，根据模板验收决定释放或消费测试图，对通过项执行 OSS 上传、URL 回填与正式包交付。用于风格模板、参考图编译、模板自生产、阶段路由、审核验收、GoodCase/BadCase 沉淀、动态基线、OSS 最终化、契约迁移与维护审计。
+description: 把参考图编译为 prompt-only 风格模板审核包，或基于已批准基线、GoodCase 和 BadCase 自主生产新模板；消费人工准入的高认知测试图，根据模板验收决定释放或消费测试图，对通过项执行 OSS 上传、URL 回填与以 key 命名的单 JSON 交付。用于风格模板、参考图编译、模板自生产、阶段路由、审核验收、GoodCase/BadCase 沉淀、动态基线、OSS 最终化、契约迁移与维护审计。
 ---
 
 # 风格模板生产
@@ -14,7 +14,7 @@ description: 把参考图编译为 prompt-only 风格模板审核包，或基于
 | 根据参考编译 | `compile-reference` | `review-decision` | `finalize` |
 | 自生产 | `self-produce` | `review-decision` | `finalize` |
 
-阶段 1 只交付当前 revision 的 `style-template.json + cover.png`，保存分析、真图分配和生成回执，不写 OSS。阶段 2 以人工对这个具体视觉 revision 的决定为准。阶段 3 只处理通过项，上传 OSS、回填 URL，交付正式包。批次允许部分通过，每个 revision 独立最终化。
+阶段 1 只交付当前 revision 的 `style-template.json + cover.png` 审核包，保存分析、真图分配和生成回执，不写 OSS。阶段 2 以人工对这个具体视觉 revision 的决定为准。阶段 3 只处理通过项，上传 OSS、回填 URL，内部发布正式 revision，并向下游交付一个 `<key>.json`。批次允许部分通过，每个 revision 独立最终化。
 
 ## 阶段 1：生成审核包
 
@@ -52,7 +52,8 @@ description: 把参考图编译为 prompt-only 风格模板审核包，或基于
 1. 校验 `approval-decision-receipt.json` 为人工 `pass`，测试图状态为 `consumed`，双 SHA 与审核包一致。
 2. 按封面内容哈希执行可恢复 OSS 上传，回填受控 HTTPS URL，运行 remote validator。
 3. 校验经验沉淀与动态基线登记回执已经存在，用 manifest 5.1.0 `final-package` 原子发布严格两文件 `package/`。
-4. OSS 失败时保留人工通过结论与测试图消费状态；修复配置后重试阶段 3。
+4. 从正式 `style-template.json` 导出 `<key>.json`。该 JSON 保持官方字段形状，`cover` 为已验证的 OSS URL，是阶段 3 唯一下游交付文件。
+5. OSS 失败时保留人工通过结论与测试图消费状态；修复配置后重试阶段 3。
 
 读取 `references/oss-handoff.md` 获取受控域名、恢复和密钥边界。
 
@@ -61,9 +62,13 @@ description: 把参考图编译为 prompt-only 风格模板审核包，或基于
 ```text
 ready → reserved → awaiting_approval → released
                                   └→ consumed
+                                         └─ 人工退役模板 → released
 ```
 
 - 唯一性按全局 ledger 计算，跨 `deliverySetId` 也不得并发复用。
+- 同一 `deliverySetId` 内保留完整使用历史；测试图即使已 `released`，也不得分配给该批次的其他模板或返工 revision。
+- `released` 资产可以在后续新的 `deliverySetId` 中重新分配；`consumed` 资产在模板活动期间退出可用容量，人工执行模板退役时转为 `released`。
+- 退役释放会把 assignment 升级为 3.0.0，使用 `template_retired` 决定并在 `previousDecision` 保留原人工结论；普通审核包继续使用 assignment 2.0.0。
 - 技术失败只能在进入人工审核前由系统释放 `reserved`。
 - 进入 `awaiting_approval` 后，系统无权根据超时、任务结束或 OSS 失败释放。
 - 只有人工 `pass` 会消费；人工 `reject` 和 `manual_release` 返回可用容量。
@@ -76,6 +81,8 @@ ready → reserved → awaiting_approval → released
 业务根目录按阶段分开：审核包写入总库 `05-风格化模板生产/06-待验收模板/<batch>/review-packages/`；人工 `pass` 的 revision 立即登记到 `05-风格化模板生产/04-研发交付/已通过正式模板包/<key>/<revision>/`，OSS 完成后更新正式地址。审核回执同步登记到 `07-数据验收与上线/04-人工验收记录/风格模板/已通过/`。每次 `pass` 自动更新动态基线；同 key 以最高通过 revision 为当前有效版本。
 
 统一通过模板目录覆盖新版正式包与已确认通过的历史交付。历史包保持源目录不变，通过 `scripts/rebuild_approved_template_catalog.py` 复制到统一目录并登记 `approvalProvenance`；不得为旧流程伪造新版逐 revision 回执。统一目录清单同时报告 OSS 已正式化与待正式化数量。
+
+人工退役统一执行 `retire-template`：先幂等写入统一目录相邻的 `已退役模板索引.json`，再把该 key 的测试图占用转为 `released`。活动目录和动态基线读取时必须排除退役 key，原正式 revision 与历史审核证据继续保留。
 
 ```text
 <run>/review-packages/<key>/<revision>/
@@ -102,9 +109,13 @@ ready → reserved → awaiting_approval → released
 └── internal/
     ├── approval-decision-receipt.json
     └── oss-finalization-receipt.json
+
+<run>/delivery/
+├── artifact-manifest.json
+└── <key>.json
 ```
 
-只交付当前阶段的两文件公开目录。内部证据通过相邻 manifest 追溯，不注入官方 `style-template.json`。
+`review-package/` 和正式 revision 的 `package/` 服务审核、回溯与目录管理。阶段 3 的最终下游交付只取 `delivery/<key>.json`；文件名必须与 JSON 内的 `key` 完全一致。内部证据通过相邻 manifest 追溯，不注入交付 JSON。
 
 ## 经验与后续评测
 
@@ -120,6 +131,7 @@ python scripts/style_workflow_cli.py validate-reference <reference-interpretatio
 python scripts/style_workflow_cli.py reserve-test-image --help
 python scripts/style_workflow_cli.py compile-reference --help
 python scripts/style_workflow_cli.py review-decision --help
+python scripts/style_workflow_cli.py retire-template --help
 python scripts/style_workflow_cli.py rebuild-experience --help
 python scripts/style_workflow_cli.py audit-experience <experience-root>
 python scripts/style_workflow_cli.py audit-baseline

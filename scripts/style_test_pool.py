@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections import Counter
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -12,6 +11,7 @@ from urllib.parse import urlparse
 from PIL import Image
 from jsonschema import Draft202012Validator
 
+from style_atomic import atomic_write_json
 from style_contracts import sha256_file
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,11 +43,12 @@ def _validate_contract(data: object, schema_name: str, invalid_code: str) -> Non
             except ValueError:
                 pass
             else:
-                supported_major = 2 if schema_name in {
-                    "test-image-pool.schema.json",
-                    "test-image-assignment.schema.json",
-                    "test-image-assignment-ledger.schema.json",
-                } else 1
+                supported_major = {
+                    "test-image-pool.schema.json": 2,
+                    "test-image-assignment.schema.json": 3,
+                    "test-image-assignment-v2.schema.json": 2,
+                    "test-image-assignment-ledger.schema.json": 3,
+                }.get(schema_name, 1)
                 if major > supported_major:
                     raise TestPoolError("contract_version_unsupported")
     schema_file = Path(__file__).parents[1] / "contracts" / schema_name
@@ -59,11 +60,11 @@ def _validate_contract(data: object, schema_name: str, invalid_code: str) -> Non
     if schema_name == "test-image-assignment-ledger.schema.json" and isinstance(data, dict):
         for assignment in data.get("assignments", []):
             version = assignment.get("schemaVersion") if isinstance(assignment, dict) else None
-            assignment_schema = (
-                "test-image-assignment-v1.schema.json"
-                if version == "1.0.0"
-                else "test-image-assignment.schema.json"
-            )
+            assignment_schema = {
+                "1.0.0": "test-image-assignment-v1.schema.json",
+                "2.0.0": "test-image-assignment-v2.schema.json",
+                "3.0.0": "test-image-assignment.schema.json",
+            }.get(str(version), "test-image-assignment.schema.json")
             _validate_contract(assignment, assignment_schema, invalid_code)
 
 
@@ -246,9 +247,17 @@ class TestImagePool:
             return item.get("status") in {"reserved", "publishing", "committed"}
         return item.get("status") in {"reserved", "awaiting_approval", "consumed"}
 
+    def _unavailable_asset_ids(self, delivery_set_id: str | None = None) -> set[str]:
+        return {
+            item["assetId"]
+            for item in self.assignments
+            if self._blocks_asset(item)
+            or (delivery_set_id is not None and item.get("deliverySetId") == delivery_set_id)
+        }
+
     def capacity(self, delivery_set_id: str | None = None) -> int:
-        """Return globally available ready assets; delivery_set_id is compatibility-only."""
-        used = {item["assetId"] for item in self.assignments if self._blocks_asset(item)}
+        """Return ready assets after global occupancy and delivery-set history are applied."""
+        used = self._unavailable_asset_ids(delivery_set_id)
         return sum(asset["status"] == "ready" and asset["assetId"] not in used for asset in self.assets)
 
     def assign(self, delivery_set_id: str, template_key: str, revision: int) -> dict[str, Any]:
@@ -276,7 +285,7 @@ class TestImagePool:
                     item.pop("decision", None)
                     item.pop("reviewReadyAt", None)
                 return dict(item)
-        used = {item["assetId"] for item in self.assignments if self._blocks_asset(item)}
+        used = self._unavailable_asset_ids(delivery_set_id)
         available = [asset for asset in self.assets if asset["status"] == "ready" and asset["assetId"] not in used]
         if not available:
             raise TestPoolError("test_pool_insufficient")
@@ -427,6 +436,35 @@ class TestImagePool:
         item["decision"] = decision
         return dict(item)
 
+    def retire_template(
+        self,
+        template_key: str,
+        *,
+        reason: str,
+        decided_at: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not reason.strip():
+            raise TestPoolError("retirement_reason_required")
+        released: list[dict[str, Any]] = []
+        for item in self.assignments:
+            if item.get("templateKey") != template_key or item.get("status") == "released":
+                continue
+            if item.get("schemaVersion") not in {"1.0.0", "2.0.0", "3.0.0"}:
+                raise TestPoolError("legacy_assignment_migration_required")
+            previous_decision = item.get("decision")
+            item["schemaVersion"] = "3.0.0"
+            item["status"] = "released"
+            item["decision"] = {
+                "verdict": "template_retired",
+                "authority": "human",
+                "decidedAt": decided_at or datetime.now(timezone.utc).isoformat(),
+                "reason": reason.strip(),
+            }
+            if isinstance(previous_decision, dict):
+                item["previousDecision"] = previous_decision
+            released.append(dict(item))
+        return released
+
     def asset(self, asset_id: str) -> dict[str, Any]:
         for asset in self.assets:
             if asset["assetId"] == asset_id:
@@ -467,19 +505,12 @@ class TestImagePool:
             self.assets = merged.assets
             if any(isinstance(asset.get("recognitionAnchor"), dict) for asset in self.assets):
                 raise TestPoolError("high_recognition_pool_requires_screening_provenance")
-            self._atomic_write(pool_file, {
+            atomic_write_json(pool_file, {
                 "artifactType": "style_test_image_pool",
                 "schemaVersion": "1.1.0",
                 "producer": "style-template-analyzer",
                 "assets": self.assets,
             })
-
-    @staticmethod
-    def _atomic_write(path: Path, value: object) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
-        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(path)
 
     def _mutate_persisted(self, ledger_file: Path, operation: Any) -> Any:
         import fcntl
@@ -498,9 +529,9 @@ class TestImagePool:
                 self.assignments = ledger_data.get("assignments", [])
                 self._validate_assignments()
             result = operation()
-            self._atomic_write(ledger_file, {
+            atomic_write_json(ledger_file, {
                 "artifactType": "test_image_assignment_ledger",
-                "schemaVersion": "2.0.0",
+                "schemaVersion": "3.0.0",
                 "producer": "style-template-analyzer",
                 "assignments": self.assignments,
             })
@@ -514,11 +545,11 @@ class TestImagePool:
         }
         current_assets: set[str] = set()
         for item in self.assignments:
-            schema_name = (
-                "test-image-assignment-v1.schema.json"
-                if item.get("schemaVersion") == "1.0.0"
-                else "test-image-assignment.schema.json"
-            )
+            schema_name = {
+                "1.0.0": "test-image-assignment-v1.schema.json",
+                "2.0.0": "test-image-assignment-v2.schema.json",
+                "3.0.0": "test-image-assignment.schema.json",
+            }.get(str(item.get("schemaVersion")), "test-image-assignment.schema.json")
             _validate_contract(item, schema_name, "assignment_ledger_invalid")
             try:
                 identity = (item["deliverySetId"], item["templateKey"], item["revision"])
@@ -528,7 +559,7 @@ class TestImagePool:
             if identity in identities:
                 raise TestPoolError("assignment_ledger_invalid")
             identities.add(identity)
-            if item.get("schemaVersion") == "2.0.0" and self._blocks_asset(item):
+            if item.get("schemaVersion") in {"2.0.0", "3.0.0"} and self._blocks_asset(item):
                 if asset in current_assets or asset in legacy_assets:
                     raise TestPoolError("assignment_ledger_invalid")
                 current_assets.add(asset)
@@ -607,6 +638,19 @@ class TestImagePool:
             lambda: self.release(delivery_set_id, template_key, revision, **decision),
         )
 
+    def retire_template_persisted(
+        self,
+        template_key: str,
+        ledger_file: Path,
+        *,
+        reason: str,
+        decided_at: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return self._mutate_persisted(
+            ledger_file,
+            lambda: self.retire_template(template_key, reason=reason, decided_at=decided_at),
+        )
+
     def reconcile_persisted(self, assignment: dict[str, Any], ledger_file: Path) -> dict[str, Any]:
         def reconcile() -> dict[str, Any]:
             expected = (assignment["deliverySetId"], assignment["templateKey"], assignment["revision"])
@@ -628,10 +672,7 @@ class TestImagePool:
                     else:
                         raise TestPoolError("test_assignment_state_mismatch")
                 return dict(existing[0])
-            if any(
-                item["assetId"] == assignment["assetId"] and self._blocks_asset(item)
-                for item in self.assignments
-            ):
+            if assignment["assetId"] in self._unavailable_asset_ids(assignment.get("deliverySetId")):
                 raise TestPoolError("test_asset_already_assigned")
             self.assignments.append(dict(assignment))
             return dict(assignment)
