@@ -14,8 +14,14 @@ from style_experience_store import DurableExperienceStore, ExperienceStoreError
 from style_dynamic_baseline import DynamicBaselineCatalog, DynamicBaselineError
 from style_reference_gate import validate_reference_interpretation
 from style_retirement import RetirementRegistryError, retire_template_transaction
+from style_operational_audit import (
+    OperationalAuditError,
+    diagnose_delivery,
+    workflow_status_snapshot,
+)
 from style_review_workflow import ReviewWorkflowError, compile_reference, record_review_decision
 from style_test_pool import TestImagePool, TestPoolError
+from validate_approved_variants import validate as validate_approved_variants
 
 
 DEFAULT_BASELINE_CATALOG = (
@@ -114,6 +120,23 @@ def build_parser() -> argparse.ArgumentParser:
     audit_baseline = subparsers.add_parser("audit-baseline", help="校验动态基线并报告当前有效模板")
     audit_baseline.add_argument("catalog", type=Path, nargs="?", default=DEFAULT_BASELINE_CATALOG)
 
+    status = subparsers.add_parser("status", help="以统一通过索引为权威报告正式化、交付和 Before 可发现性")
+    status.add_argument("--catalog", type=Path, required=True)
+    status.add_argument("--data-root", type=Path)
+    status.add_argument("--delivery-root", type=Path)
+
+    diagnose = subparsers.add_parser("diagnose-delivery", help="诊断工作台 JSON 是否仍指向旧 revision")
+    diagnose.add_argument("delivery", type=Path)
+    diagnose.add_argument("--catalog", type=Path, required=True)
+    diagnose.add_argument("--data-root", type=Path)
+
+    approved_variants = subparsers.add_parser(
+        "validate-approved-variants",
+        help="校验用户附件、精确视觉 revision 与实际生成提示词的绑定",
+    )
+    approved_variants.add_argument("approval", type=Path)
+    approved_variants.add_argument("compilation", type=Path)
+
     retire = subparsers.add_parser("retire-template", help="登记人工退役并释放该模板占用的测试图")
     retire.add_argument("--template-key", required=True)
     retire.add_argument("--reason", required=True)
@@ -162,6 +185,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "audit-baseline":
             snapshot, _ = DynamicBaselineCatalog(args.catalog).load_active()
             return _emit({"ok": True, "snapshot": snapshot})
+        if args.command == "status":
+            return _emit({"ok": True, "snapshot": workflow_status_snapshot(
+                args.catalog,
+                data_root=args.data_root,
+                delivery_root=args.delivery_root,
+            )})
+        if args.command == "diagnose-delivery":
+            report = diagnose_delivery(args.delivery, args.catalog, data_root=args.data_root)
+            return _emit({"ok": not report["issues"], "diagnostic": report})
+        if args.command == "validate-approved-variants":
+            errors = validate_approved_variants(args.approval.resolve(), args.compilation.resolve())
+            if errors:
+                raise ReviewWorkflowError(f"approved_variant_binding_failed: {'; '.join(errors)}")
+            return _emit({"ok": True, "gate": "approved-variant-binding"})
         if args.command == "retire-template":
             pool = TestImagePool.load(args.pool, args.ledger)
             retirement, removed_catalog_entries, released = retire_template_transaction(
@@ -188,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         ExperienceStoreError,
         DynamicBaselineError,
         RetirementRegistryError,
+        OperationalAuditError,
     ) as error:
         print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 1

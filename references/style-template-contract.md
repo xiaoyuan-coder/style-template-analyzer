@@ -25,6 +25,7 @@
     ├── style-analysis.json 或 self-production-analysis.json
     ├── test-image-assignment.json
     ├── cover-generation-receipt.json
+    ├── effect-reproduction-contract.json
     ├── cover-check-receipt.json
     ├── approval-decision-receipt.json
     └── oss-finalization-receipt.json
@@ -36,6 +37,7 @@
 - `package/` 是正式 revision 的可追溯运行包，严格只含两个文件。
 - `style-template.json` 保存研发运行字段，其 `cover` 已回填受控 OSS URL，遵循 `style-template-import.schema.json`。
 - `<delivery>/<key>.json` 复制正式 `style-template.json` 的官方字段形状，文件名与 JSON 内 `key` 完全一致，是唯一最终下游交付文件。
+- `统一通过模板索引.json` 是工作台和运维读取的相邻发现层，登记活动 revision、Approved After、Approved Before 或其可解析证据路径、OSS 状态与 SHA；这些内部发现字段不注入官方 `<key>.json`。
 - `internal/` 保存取证、唯一测试图分配、封面生成、轻量检查和 OSS 最终化回执；自生产 revision 另含基线快照。
 - `artifact-manifest.json` 声明 `review-package` 或 `final-package` 阶段、产物类型、三段式版本、producer 和 SHA-256，遵循 `contracts/artifact-manifest.schema.json`。
 - `style-evaluation.json` 由完整真图评测阶段单独产生，不进入最终模板包。
@@ -91,12 +93,13 @@ testNotes styleEvaluation qualityStatus renderingMethod
 
 运行时只提交用户上传的 `source`。模型图片数组固定为 `[source]`，并配合 `promptTemplate` 执行单图整图重构。`cover`、`metadata.sourceRef.styleAsset` 和 `style-analysis.json` 均不进入生成请求。完整协议见 `prompt-only-runtime.md`。
 
-### 画幅继承
+### 画幅策略
 
 - 运行前读取用户上传图的宽、高、横竖方向和宽高比。
-- 输出保持用户上传图的横竖方向与宽高比；浮窗、边框、UI 或其他获准模板结构在该画幅内自适应排布。
-- `cover` 的尺寸和比例只描述展示资源，`imageSize` 只提供名义像素预算，两者都不覆盖用户图画幅。
-- 生成服务只接受离散尺寸时，选择与用户图宽高比最接近且方向一致的尺寸，并记录比例偏差。
+- 默认使用 `inherit-source-aspect-ratio`。Approved After 明确展示了重定画幅时，可以选择 `adaptive-reframe` 或 `fixed-template-aspect-ratio`；该决定同时进入 analysis 3.0.0、After 复现合同和运行 prompt。
+- `adaptive-reframe` 根据用户内容和 Approved After 的构图关系选择横竖方向与比例；`fixed-template-aspect-ratio` 使用模板明确声明的方向与比例。
+- `cover` 和 `imageSize` 只提供证据与名义像素预算。只有复现合同的画幅边界可以覆盖源图比例，封面尺寸本身没有运行授权。
+- 生成服务只接受离散尺寸时，选择与已决定画幅策略最接近的尺寸，并记录比例偏差。
 - 真实生成调用不附加来自参考图、模板示例或人工测试习惯的固定比例指令。
 
 ## 4. 内容与变换边界
@@ -109,7 +112,7 @@ testNotes styleEvaluation qualityStatus renderingMethod
 
 ## 5. 内部分析结构
 
-2.0.0 `style-analysis.json` 至少记录；存量 `2.0` 由 legacy gate 读取：
+3.0.0 `style-analysis.json` 至少记录；存量 `2.0/2.0.0` 由 legacy gate 读取：
 
 - 参考资源和参考结构；
 - 参考图具体内容清单；
@@ -133,19 +136,21 @@ testNotes styleEvaluation qualityStatus renderingMethod
 
 ## 6. 提示词硬门槛
 
-validator 要求 `promptTemplate` 同时包含：
+新 revision 的 validator 要求 `promptTemplate` 按“任务、保留、变换权限、核心效果、空间结构、内容映射、视觉风格、完成判据、限制”九段组织；历史六段提示词只用于只读迁移。详细写法以 `runtime-prompt-authoring-standard.md` 为准。新提示词同时包含：
 
-1. 用户上传图是唯一图片输入和唯一内容来源；
+1. 明确以用户上传图为内容依据；单图数量由 `inputSchema` 和运行适配器保证；
 2. 全部显著主体或主主体选择、原主体逐一对应，以及主体特征连续性；
 3. 发型、服装、配饰和手持物的保留要求；
 4. 主体形态、动作/视角、呈现实例、环境、构图、固定结构和受控派生的授权或保留声明；
-5. 完整重绘或完整重建，以及 3–6 个标志性变换机制；
-6. 模板未授权的越权新增内容边界；
-7. 原照片像素必须消失；
-8. 输出画幅方向与宽高比跟随用户上传图；
-9. 不含“第 1 张图片”“第 2 张图片”“参考图”“仅作为风格参考”等双图依赖词。
+5. 完整重绘或完整重建，以及 1–3 个具备来源角色、变换动作和可见结果的必现机关；
+6. 画布区域骨架、逐区内容职责、实例次数和来源角色替代策略；
+7. 3–5 个可从最终图直接观察的完成判据；
+8. 直接说明不要新增的主体、物件、关系或文字；
+9. 不要保留照片像素；
+10. 输出画幅方向与宽高比具有明确策略：继承用户图，或按 Approved After 合同重定；
+11. 不含“第 1 张图片”“第 2 张图片”“参考图”“仅作为风格参考”等双图依赖词。
 
-提示词长度为 120–1200 个字符，推荐 120–700。过长提示词回到分析文件中删减重复、宽泛和低区分度描述。
+提示词长度为 120–1200 个字符，推荐 450–1100。过长提示词回到分析文件中删减重复、宽泛和低区分度描述。运行 prompt 不得出现合同字段名、证据文本、内部分类标签和“前文”类悬空指代。
 
 ## 7. 可选完整验收门槛
 
@@ -161,7 +166,7 @@ validator 要求 `promptTemplate` 同时包含：
 
 六维分值为：标志性机制还原 30、主体特征连续性 20、内容与关系 15、授权结构与派生 15、全像素非摄影覆盖 10、画幅与构图 10。
 
-运行请求包含参考素材、显著主体丢失/替换、基础主体实例复制/合并/删减/增殖、派生实例形成新独立主体、主体特征漂移、未授权内容或案例物象泄漏、摄影介质残留、核心标志性机制完全缺失、输出横竖方向错误或宽高比明显偏离均为硬失败，案例记 0 分。契约已授权且保持原主体归属的姿态、视角、重复呈现、环境或构图变化不计为失败。
+运行请求包含参考素材、显著主体丢失/替换、基础主体实例越权复制/合并/删减/增殖、派生实例形成新独立主体、主体特征漂移、未授权内容或案例物象泄漏、摄影介质残留、核心标志性机制完全缺失、输出画幅偏离复现合同均为硬失败，案例记 0 分。契约已授权且保持原主体归属的姿态、视角、重复呈现、画幅、裁切补全、比例位置、环境、遮挡或构图变化不计为失败。
 
 普通服装图案还要通过 `garment-print-template-taxonomy.md` 的印制适配门。意外分析线和说明组件先判 `needs-prompt-revision`；它们压过主体或破坏图案完整性时按业务硬失败处理。
 

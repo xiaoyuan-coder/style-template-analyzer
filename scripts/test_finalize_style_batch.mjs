@@ -8,6 +8,7 @@ import {
   finalizeStyleBatch,
   isManagedRemoteUrl,
   loadEnvChain,
+  loadEnvSources,
   loadOssConfig,
   preflightStyleBatch,
 } from "./finalize_style_batch.mjs";
@@ -111,6 +112,29 @@ test("loads OSS variables from a parent .env without overriding process values",
   }
 });
 
+test("explicit env file works when the staged input lives outside the repository", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "style-explicit-env-"));
+  try {
+    const input = path.join(root, "staging", "batch");
+    const configRoot = path.join(root, "repo");
+    const envFile = path.join(configRoot, "style.env");
+    await mkdir(input, { recursive: true });
+    await mkdir(configRoot, { recursive: true });
+    await writeFile(envFile, [
+      "ALIYUN_OSS_ACCESS_KEY_ID=explicit-ak",
+      "ALIYUN_OSS_ACCESS_KEY_SECRET=explicit-sk",
+      "ALIYUN_OSS_ASSETS_BUCKET=explicit-bucket",
+      "ALIYUN_OSS_ASSETS_ENDPOINT=oss-cn-shanghai.aliyuncs.com",
+      "ALIYUN_OSS_ASSETS_DOMAIN=assets.example.com",
+      "",
+    ].join("\n"));
+    const env = await loadEnvSources([input], {}, envFile);
+    assert.equal(loadOssConfig(env).bucket, "explicit-bucket");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("dry-run reports the single cover asset", async () => {
   const value = await fixture();
   try {
@@ -119,6 +143,31 @@ test("dry-run reports the single cover asset", async () => {
     assert.equal(summary.localAssets, 1);
     assert.equal(summary.uniqueLocalAssets, 1);
     assert.equal(summary.duplicateAssets, 0);
+  } finally {
+    await rm(value.root, { recursive: true, force: true });
+  }
+});
+
+test("dry-run accepts a mixed local and managed-remote batch and verifies the remote object", async () => {
+  const value = await fixture();
+  try {
+    const remoteDir = path.join(value.input, "0002");
+    await mkdir(remoteDir, { recursive: true });
+    const remote = templateData("already-managed-cover");
+    remote.cover = "https://assets.example.com/dev/style/templates/123e4567-e89b-42d3-a456-426614174000.png";
+    await writeFile(path.join(remoteDir, "style-template.json"), `${JSON.stringify(remote, null, 2)}\n`);
+    const checked = [];
+    const summary = await preflightStyleBatch({
+      input: value.input,
+      config: CONFIG,
+      validateFile: mockValidate,
+      checkRemoteAsset: async (url) => { checked.push(url); },
+    });
+    assert.equal(summary.templates, 2);
+    assert.equal(summary.localAssets, 1);
+    assert.equal(summary.remoteAssets, 1);
+    assert.equal(summary.remoteValidated, 1);
+    assert.equal(checked.length, 1);
   } finally {
     await rm(value.root, { recursive: true, force: true });
   }

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/workflow-learning-event.schema.json",
+  "title": "StyleWorkflowLearningEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "learnedAt", "category", "symptom", "humanExpectation", "rootCause", "rule", "gate", "automation", "regressionCase", "evidence"],
+  "properties": {
+    "artifactType": {"const": "style_workflow_learning_event"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"type": "string", "pattern": "^style-template-analyzer"},
+    "learnedAt": {"type": "string", "format": "date-time"},
+    "category": {"enum": ["prompt-compilation-drift", "selected-variant-drift", "scanner-path-drift", "lifecycle-state-drift", "catalog-reconciliation-drift", "oss-configuration-routing-drift", "batch-aesthetic-drift"]},
+    "symptom": {"type": "string", "minLength": 1},
+    "humanExpectation": {"type": "string", "minLength": 1},
+    "rootCause": {"type": "string", "minLength": 1},
+    "rule": {"type": "string", "minLength": 1},
+    "gate": {"type": "string", "minLength": 1},
+    "automation": {"type": "string", "minLength": 1},
+    "regressionCase": {"type": "string", "minLength": 1},
+    "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  }
+}

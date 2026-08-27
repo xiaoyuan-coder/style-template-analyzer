@@ -2,6 +2,8 @@
 
 本规则用于 `produce` 的用户视觉审批。完成标准是每个用户明确拒绝的视觉 revision 都进入 BadCase 库，并在下一轮候选设计前参与重复失败拦截。
 
+BadCase 记录视觉结果；提示词编译、选中版本、工作台路径、状态对账和 OSS 配置等流程故障按 `workflow-learning.md` 生成 `style_workflow_learning_event`。同一次反馈可以同时形成视觉 BadCase 与流程经验，两类记录分别承担审美学习和工程防复发。
+
 ## 写入边界
 
 - 把 `reject`、`rejected`、`excluded` 和用户批准记录中的明确淘汰项写入 BadCase。

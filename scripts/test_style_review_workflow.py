@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,7 @@ from style_review_workflow import (
     route_workflow,
 )
 from style_dynamic_baseline import DynamicBaselineCatalog
+from style_effect_contract import BOUNDARY_MODES
 from style_retirement import register_retirement
 from test_style_reference_gate import interpretation, visual_gate
 from style_test_pool import TestImagePool, TestPoolError, normalize_asset
@@ -67,7 +69,16 @@ class Generator:
     def __call__(self, source: dict, template_data: dict, output: Path) -> dict:
         self.calls += 1
         Image.new("RGB", (32, 32), (120, 80, 40)).save(output, format="PNG")
-        return {"provider": "fixture", "sourceAssetId": source["assetId"]}
+        return {
+            "provider": "fixture",
+            "sourceAssetId": source["assetId"],
+            "submittedPromptSha256": hashlib.sha256(
+                template_data["promptTemplate"].encode("utf-8")
+            ).hexdigest(),
+            "sourceSha256": source["sha256"],
+            "inputImageCount": 1,
+            "approvedAfterUsedAsInput": False,
+        }
 
 
 class Oss:
@@ -131,6 +142,27 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         self.temporary.cleanup()
 
     @staticmethod
+    def effect_contract(template_key: str) -> dict:
+        return {
+            "artifactType": "effect_reproduction_contract",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer",
+            "templateKey": template_key,
+            "authorityMode": "after-first",
+            "boundaryDecisions": [
+                {
+                    "dimension": dimension,
+                    "mode": next(iter(sorted(modes))),
+                    "evidence": f"fixture After evidence for {dimension}",
+                    "promptDirective": "用户上传图",
+                }
+                for dimension, modes in BOUNDARY_MODES.items()
+            ],
+            "templateConstants": [],
+            "unresolvedConflicts": [],
+        }
+
+    @staticmethod
     def compiler(reference: Path) -> dict:
         data = template()
         evidence = analysis()
@@ -138,7 +170,12 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         semantics = interpretation()
         semantics["templateKey"] = data["key"]
         semantics["sourceImages"][0]["sha256"] = hashlib.sha256(reference.read_bytes()).hexdigest()
-        return {"template": data, "analysis": evidence, "referenceInterpretation": semantics}
+        return {
+            "template": data,
+            "analysis": evidence,
+            "referenceInterpretation": semantics,
+            "effectContract": ApprovalGatedWorkflowTests.effect_contract(data["key"]),
+        }
 
     @staticmethod
     def visual_checker(output: Path, template_data: dict, interpretation_data: dict, attempt: int) -> dict:
@@ -162,6 +199,7 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
                 compiled["template"]["metadata"]["sourceRef"]["producerKey"] = key
                 compiled["analysis"]["templateKey"] = key
                 compiled["referenceInterpretation"]["templateKey"] = key
+                compiled["effectContract"]["templateKey"] = key
                 return compiled
         return compile_reference(
             self.reference,
@@ -190,8 +228,57 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         self.assertEqual(errors, [])
         manifest = json.loads((review_root / "artifact-manifest.json").read_text(encoding="utf-8"))
         assignment_record = next(item for item in manifest["artifacts"] if item["artifactType"] == "test_image_assignment")
-        self.assertEqual(manifest["schemaVersion"], "5.1.0")
+        self.assertEqual(manifest["schemaVersion"], "6.0.0")
         self.assertEqual(assignment_record["schemaVersion"], "2.0.0")
+        generation = json.loads(
+            (review_root / "internal" / "cover-generation-receipt.json").read_text()
+        )
+        self.assertEqual(generation["schemaVersion"], "2.0.0")
+        self.assertEqual(
+            generation["provider"]["sourceLocalPath"],
+            self.pool.asset(result["assetId"])["localPath"],
+        )
+        effect = json.loads(
+            (review_root / "internal" / "effect-reproduction-contract.json").read_text()
+        )
+        self.assertEqual(effect["evidenceBinding"]["promptSha256"], generation["submittedPromptSha256"])
+
+    def test_phase_one_rejects_generator_prompt_substitution(self) -> None:
+        class SubstitutingGenerator(Generator):
+            def __call__(self, source: dict, template_data: dict, output: Path) -> dict:
+                receipt = super().__call__(source, template_data, output)
+                receipt["submittedPromptSha256"] = "0" * 64
+                return receipt
+
+        with self.assertRaisesRegex(ReviewWorkflowError, "cover_generation_prompt_mismatch"):
+            compile_reference(
+                self.reference,
+                self.compiler,
+                self.pool,
+                SubstitutingGenerator(),
+                run_root=self.root / "runs",
+                delivery_set_id="prompt-substitution",
+                ledger_file=self.ledger,
+                reference_visual_checker=self.visual_checker,
+            )
+
+    def test_phase_one_requires_effect_reproduction_contract(self) -> None:
+        def compiler_without_effect(reference: Path) -> dict:
+            compiled = self.compiler(reference)
+            compiled.pop("effectContract")
+            return compiled
+
+        with self.assertRaisesRegex(ReviewWorkflowError, "effect_reproduction_contract_required"):
+            compile_reference(
+                self.reference,
+                compiler_without_effect,
+                self.pool,
+                self.generator,
+                run_root=self.root / "runs",
+                delivery_set_id="missing-effect-contract",
+                ledger_file=self.ledger,
+                reference_visual_checker=self.visual_checker,
+            )
 
     def test_pending_requires_explicit_human_release(self) -> None:
         review = self.create_review()
@@ -303,6 +390,77 @@ class ApprovalGatedWorkflowTests(unittest.TestCase):
         self.assertEqual(again["delivery"], delivery_file.as_posix())
         self.assertTrue(delivery_file.is_file())
         self.assertEqual(oss.calls, 1)
+
+    def test_finalization_upgrades_existing_awaiting_formal_revision_and_reconciles_catalog(self) -> None:
+        review = self.create_review(delivery="delivery-pending", key="pending-style")
+        review_root = Path(review["reviewRoot"])
+        record_review_decision(
+            review_root,
+            "pass",
+            "人工验收通过",
+            self.pool,
+            self.ledger,
+            experience_sink=self.experience_sink,
+            baseline_sink=self.guarded_baseline,
+        )
+        run_root = self.root / "formal"
+        pending_root = run_root / "pending-style/1"
+        (pending_root / "package").mkdir(parents=True)
+        shutil.copy2(review_root / "review-package/style-template.json", pending_root / "package/style-template.json")
+        shutil.copy2(review_root / "review-package/cover.png", pending_root / "package/cover.png")
+        shutil.copytree(review_root / "internal", pending_root / "internal")
+        write_json(pending_root / "artifact-manifest.json", {
+            "artifactType": "style_template_catalog_entry",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer",
+            "status": "approved",
+            "stage": "dynamic-human-pass",
+            "templateKey": "pending-style",
+            "revision": 1,
+        })
+        local_template = json.loads((pending_root / "package/style-template.json").read_text(encoding="utf-8"))
+        catalog = {
+            "artifactType": "style_template_delivery_catalog",
+            "schemaVersion": "2.0.0",
+            "producer": "style-template-analyzer",
+            "templateCount": 1,
+            "effectImageCount": 1,
+            "ossStatusCounts": {"finalized": 0, "awaiting-finalization": 1},
+            "items": [{
+                "id": "pending-style-r1",
+                "key": "pending-style",
+                "title": local_template["title"],
+                "revision": 1,
+                "verdict": "pass",
+                "ossStatus": "awaiting-finalization",
+                "template": "pending-style/1/package/style-template.json",
+                "effectImage": "pending-style/1/package/cover.png",
+                "templateSha256": hashlib.sha256((pending_root / "package/style-template.json").read_bytes()).hexdigest(),
+                "effectSha256": hashlib.sha256((pending_root / "package/cover.png").read_bytes()).hexdigest(),
+                "cover": "cover.png",
+            }],
+        }
+        write_json(run_root / "统一通过模板索引.json", catalog)
+        write_json(run_root / "已通过模板清单.json", catalog)
+
+        result = finalize_approved(
+            review_root,
+            run_root,
+            Oss(),
+            assets_domain="assets.example.com",
+        )
+
+        self.assertFalse(result["idempotent"])
+        finalized = json.loads((pending_root / "package/style-template.json").read_text(encoding="utf-8"))
+        self.assertTrue(finalized["cover"].startswith("https://assets.example.com/"))
+        self.assertTrue((pending_root / "internal/oss-finalization-receipt.json").is_file())
+        updated = json.loads((run_root / "统一通过模板索引.json").read_text(encoding="utf-8"))
+        self.assertEqual(updated["items"][0]["ossStatus"], "finalized")
+        self.assertEqual(updated["ossStatusCounts"], {"finalized": 1, "awaiting-finalization": 0})
+        self.assertEqual(
+            updated,
+            json.loads((run_root / "已通过模板清单.json").read_text(encoding="utf-8")),
+        )
 
     def test_concurrent_finalization_keeps_every_delivery_manifest_entry(self) -> None:
         reviews = [

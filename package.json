@@ -1,6 +1,6 @@
 {
   "name": "style-template-analyzer",
-  "version": "7.8.1",
+  "version": "8.7.0",
   "private": true,
   "packageManager": "pnpm@10.8.0",
   "scripts": {

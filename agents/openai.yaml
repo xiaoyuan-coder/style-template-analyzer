@@ -1,4 +1,4 @@
 interface:
   display_name: "风格模板分析与自生产"
-  short_description: "编译或自生产风格模板，管理审核决定、动态基线与正式交付"
-  default_prompt: "使用 $style-template-analyzer 路由参考编译或模板自生产：从 test-image-pool-curator 发布的准入池预留测试图，第一阶段交付 JSON 与封面审核包，第二阶段记录具体 revision 的人工决定，第三阶段对通过项上传 OSS、回填 URL、登记动态基线并交付正式包。"
+  short_description: "编译或自生产风格模板，管理精确审批、状态诊断与正式交付"
+  default_prompt: "使用 $style-template-analyzer 路由参考编译或模板自生产：预留唯一测试图并生成审核包，按解码像素与生成 Prompt 绑定人工选择，对通过项执行状态感知 OSS 正式化，并用统一索引诊断工作台、Before 与交付 revision。"

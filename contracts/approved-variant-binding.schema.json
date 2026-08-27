@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/approved-variant-binding.schema.json",
+  "title": "ApprovedVariantBinding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "deliverySetId", "approvalRevision", "finalizationAuthorization", "templateCount", "templates"],
+  "properties": {
+    "artifactType": {"const": "style_template_approved_compilation_spec"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"type": "string", "pattern": "^style-template-analyzer"},
+    "deliverySetId": {"type": "string", "minLength": 1},
+    "approvalRevision": {"type": "integer", "minimum": 1},
+    "finalizationAuthorization": {"type": "string", "minLength": 1},
+    "templateCount": {"type": "integer", "minimum": 1},
+    "templates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["index", "key", "selectedVariant", "variantNote", "selectedCover", "selectedCoverSha256", "selectedCoverPixelSha256", "testAssetId", "sourceSha256", "effectContractSha256", "x", "y", "b", "c", "promptTemplate", "promptSha256", "generationPromptSha256"],
+        "properties": {
+          "index": {"type": "integer", "minimum": 1},
+          "key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+          "selectedVariant": {"type": "string", "minLength": 1},
+          "variantNote": {"type": "string", "minLength": 8},
+          "selectedCover": {"type": "string", "minLength": 1},
+          "selectedCoverSha256": {"$ref": "#/$defs/sha256"},
+          "selectedCoverPixelSha256": {"$ref": "#/$defs/sha256"},
+          "testAssetId": {"type": "string", "minLength": 1},
+          "sourceSha256": {"$ref": "#/$defs/sha256"},
+          "effectContractSha256": {"$ref": "#/$defs/sha256"},
+          "x": {"type": "string", "minLength": 1},
+          "y": {"type": "string", "minLength": 1},
+          "b": {"type": "string", "minLength": 1},
+          "c": {"type": "string", "minLength": 1},
+          "promptTemplate": {"type": "string", "minLength": 120, "maxLength": 1200},
+          "promptSha256": {"$ref": "#/$defs/sha256"},
+          "generationPromptSha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

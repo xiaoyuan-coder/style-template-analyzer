@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rebuild_approved_template_catalog import ApprovedEntry, CatalogError, load_retired_keys, publish_entry
+from rebuild_approved_template_catalog import ApprovedEntry, CatalogError, catalog_item, load_retired_keys, publish_entry
 
 
 class ApprovedCatalogMigrationTests(unittest.TestCase):
@@ -57,6 +57,14 @@ class ApprovedCatalogMigrationTests(unittest.TestCase):
         )
         self.assertEqual(template["cover"], "cover.png")
         self.assertEqual(record["coverPolicy"], "local-approved-cover-awaiting-oss")
+
+    def test_catalog_exposes_approved_before_when_source_evidence_is_discoverable(self) -> None:
+        before = self.source / "before.jpg"
+        before.write_bytes(b"before")
+        output = self.root / "approved"
+        publish_entry(self.entry(), output, self.root, "2026-08-20T00:00:00+00:00")
+        item = catalog_item(self.entry(), output, self.root)
+        self.assertEqual(item["approvedBefore"], "source/before.jpg")
 
     def test_conflicting_destination_aborts(self) -> None:
         output = self.root / "approved"

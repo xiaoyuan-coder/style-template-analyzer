@@ -9,6 +9,8 @@
 | `review-decision` | 记录人工通过、驳回、待定或明确释放 | 决定回执与测试图终态/持续占用 |
 | `finalize` | 对已通过 revision 上传 OSS、回填 URL 并导出单 JSON | `final-package + delivery/<key>.json` |
 | `retire-template` | 登记人工退役、刷新活动 catalog、释放测试图并退出动态基线 | 退役索引、活动 catalog 与 ledger 一致 |
+| `status` | 以统一索引为权威核对文件实态、OSS、delivery 与 Before 可发现性 | `style_workflow_status_snapshot` |
+| `diagnose-delivery` | 判断工作台 JSON 是否仍指向旧 revision | delivery SHA、活动 revision 与问题码 |
 | `evaluate` | 使用独立测试集评测正式包 | 独立评测交接物 |
 
 `compile-reference` 与 `self-produce` 是两个业务意图，共用审核包、人工决定、最终化三阶段内核。统一命令入口是 `style_workflow_cli.py`，网页来源、生成器、独立视觉 reviewer、经验沉淀和 OSS 通过 adapter 接入。
@@ -16,7 +18,7 @@
 ## 双状态机
 
 ```text
-包生命周期：  review-package → approved → final-package
+包生命周期：  review-package → approved → awaiting-finalization → final-package → delivered
                                    ├→ rejected
                                    └→ pending
 
@@ -38,7 +40,7 @@ OSS 属于包最终化。OSS 失败不改变人工通过证据，不释放已消
 3. 校验模板、分析、基线与当前全局可用容量。
 4. 写全局 ledger `reserved`，在 revision 同级 staging 生成封面与技术回执。
 5. 参考编译由独立 reviewer 生成六维视觉回执，排除自审、低分和解释性结构复制。
-6. 写入预期 `awaiting_approval` 分配，执行 manifest 5.1.0 `review-package` 校验。
+6. 写入预期 `awaiting_approval` 分配，执行 manifest 6.0.0 `review-package` 校验；十四项效果边界、最终 prompt、唯一源图和封面 SHA 必须闭合。
 7. 原子发布审核包，再原子提交 ledger `awaiting_approval`。提交失败时撤回审核包。
 
 封面生成或技术检查失败发生在人工审核前，系统可写 `system_failure` 并释放预留。
@@ -57,8 +59,9 @@ OSS 属于包最终化。OSS 失败不改变人工通过证据，不释放已消
 
 1. 只接受 `consumed + human pass + 双 SHA 一致` 的审核包。
 2. OSS adapter 按封面内容哈希去重，上传后 HEAD 验证，输出受控域名 URL。
-3. 要求经验沉淀和动态基线登记回执已经存在，在 staging 生成严格两文件 `package/`，运行 manifest 5.1.0 `final-package` 与 remote validator。
+3. 要求经验沉淀和动态基线登记回执已经存在，在 staging 生成严格两文件 `package/`，运行 manifest 6.0.0 `final-package` 与 remote validator。
 4. 原子发布正式 revision，再在 delivery 发布锁内把已验证的官方 JSON 导出为 `delivery/<key>.json`，并重建相邻 `artifact-manifest.json`。每次原子写使用唯一临时文件；manifest 写入失败时回滚本次 delivery JSON，重试会重新补齐两者。
+5. 人工 Pass 已在正式目录登记 `dynamic-human-pass` 占位 revision 时，阶段 3 校验身份后原位升级；完成后同步 `统一通过模板索引.json` 与镜像中的 cover、SHA、`ossStatus` 和聚合计数。
 
 批量任务中每个 revision 独立发布，允许部分成功。
 
@@ -73,7 +76,7 @@ OSS 属于包最终化。OSS 失败不改变人工通过证据，不释放已消
 
 - 官方 `style-template.json`：1.0.0，形状保持不变。
 - 普通测试图分配：2.0.0；模板退役释放记录：3.0.0，保留 `previousDecision`；ledger 外层当前写入 4.0.0，并兼容读取 1.0.0/2.0.0/3.0.0。
-- artifact manifest：5.1.0 增加动态基线登记回执；5.0.0 提供参考语义、独立视觉和经验回执；4.0.0 只读兼容。
+- artifact manifest：6.0.0 增加 After 效果复现合同与精确生成证据；5.1.0 增加动态基线登记回执；5.0.0 提供参考语义、独立视觉和经验回执；4.0.0 只读兼容。
 - 审核决定回执：1.0.0。
 - 未知更高 major 返回 `failed: contract_version_unsupported`。
 

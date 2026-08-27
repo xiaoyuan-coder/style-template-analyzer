@@ -11,8 +11,8 @@ from typing import Any
 
 from style_contracts import KEY_RE
 
-CURRENT_SCHEMA_VERSION = "2.0.0"
-LEGACY_SCHEMA_VERSIONS = {"2.0"}
+CURRENT_SCHEMA_VERSION = "3.0.0"
+LEGACY_SCHEMA_VERSIONS = {"2.0", "2.0.0"}
 REQUIRED_FIELDS = {
     "schemaVersion",
     "templateKey",
@@ -75,13 +75,14 @@ CONTRACT_FIELDS = {
     "framePolicy",
     "renderingTarget",
 }
-CONTENT_INVARIANTS = {
+LEGACY_CONTENT_INVARIANTS = {
     "subject-set",
     "subject-features",
     "associated-objects",
     "key-relationships",
     "source-frame",
 }
+CURRENT_CONTENT_INVARIANTS = (LEGACY_CONTENT_INVARIANTS - {"source-frame"}) | {"frame-policy"}
 DERIVATIONS = {
     "local-enlargement",
     "feature-statistics",
@@ -163,7 +164,7 @@ def check_enum_list(
     return {item for item in value if isinstance(item, str) and item in allowed}
 
 
-def check_contract(errors: list[str], value: Any) -> tuple[set[str], set[str], set[str]]:
+def check_contract(errors: list[str], value: Any, *, schema_version: str) -> tuple[set[str], set[str], set[str]]:
     if not isinstance(value, dict):
         errors.append("transformationContract 必须是 object")
         return set(), set(), set()
@@ -190,10 +191,20 @@ def check_contract(errors: list[str], value: Any) -> tuple[set[str], set[str], s
     if value.get("compositionMode") not in {"preserve", "reorganize"}:
         errors.append("transformationContract.compositionMode 不合法")
 
-    invariants = check_enum_list(
-        errors, "transformationContract.contentInvariants", value.get("contentInvariants"), CONTENT_INVARIANTS, 5, 5
+    expected_invariants = (
+        CURRENT_CONTENT_INVARIANTS
+        if schema_version == CURRENT_SCHEMA_VERSION
+        else LEGACY_CONTENT_INVARIANTS
     )
-    if invariants != CONTENT_INVARIANTS:
+    invariants = check_enum_list(
+        errors,
+        "transformationContract.contentInvariants",
+        value.get("contentInvariants"),
+        LEGACY_CONTENT_INVARIANTS | CURRENT_CONTENT_INVARIANTS,
+        5,
+        5,
+    )
+    if invariants != expected_invariants:
         errors.append("transformationContract.contentInvariants 必须完整包含五项全局不变量")
     constants = set(
         check_text_list(
@@ -215,8 +226,16 @@ def check_contract(errors: list[str], value: Any) -> tuple[set[str], set[str], s
             errors.append("transformationContract.textPolicy.environmentText 不合法")
         if text_policy.get("templateText") not in {"none", "template-specific"}:
             errors.append("transformationContract.textPolicy.templateText 不合法")
-    if value.get("framePolicy") != "inherit-source-aspect-ratio":
-        errors.append("transformationContract.framePolicy 必须为 inherit-source-aspect-ratio")
+    frame_policy = value.get("framePolicy")
+    allowed_frame_policies = (
+        {"inherit-source-aspect-ratio", "adaptive-reframe", "fixed-template-aspect-ratio"}
+        if schema_version == CURRENT_SCHEMA_VERSION
+        else {"inherit-source-aspect-ratio"}
+    )
+    if frame_policy not in allowed_frame_policies:
+        errors.append(
+            "transformationContract.framePolicy 必须与 analysis schemaVersion 的画幅策略兼容"
+        )
     if value.get("renderingTarget") != "full-non-photographic-redraw":
         errors.append("transformationContract.renderingTarget 必须为 full-non-photographic-redraw")
 
@@ -314,7 +333,7 @@ def validate_data(data: Any) -> list[str]:
     if extras:
         errors.append(f"未知字段：{', '.join(sorted(extras))}")
     if data.get("schemaVersion") not in {CURRENT_SCHEMA_VERSION, *LEGACY_SCHEMA_VERSIONS}:
-        errors.append(f"schemaVersion 必须为 {CURRENT_SCHEMA_VERSION}（存量兼容 2.0）")
+        errors.append(f"schemaVersion 必须为 {CURRENT_SCHEMA_VERSION}（存量兼容 2.0/2.0.0）")
     key = data.get("templateKey")
     if not isinstance(key, str) or not KEY_RE.fullmatch(key):
         errors.append("templateKey 格式不合法")
@@ -327,7 +346,11 @@ def validate_data(data: Any) -> list[str]:
     check_text_list(errors, "referenceContentInventory", data.get("referenceContentInventory"), 1, 100, maximum_length=120)
     blocklist = set(check_text_list(errors, "referenceContentBlocklist", data.get("referenceContentBlocklist"), 1, 100, maximum_length=120))
 
-    families, constants, _ = check_contract(errors, data.get("transformationContract"))
+    families, constants, _ = check_contract(
+        errors,
+        data.get("transformationContract"),
+        schema_version=str(data.get("schemaVersion", "")),
+    )
     overlap = constants.intersection(blocklist)
     if overlap:
         errors.append(f"templateConstants 与 referenceContentBlocklist 互斥，发现重复项：{', '.join(sorted(overlap))}")

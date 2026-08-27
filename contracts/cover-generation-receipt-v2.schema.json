@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-cover-generation-receipt-v2.schema.json",
+  "title": "StyleCoverGenerationReceiptV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactType",
+    "schemaVersion",
+    "producer",
+    "templateKey",
+    "revision",
+    "assetId",
+    "submittedPromptSha256",
+    "sourceSha256",
+    "inputImageCount",
+    "approvedAfterUsedAsInput",
+    "provider"
+  ],
+  "properties": {
+    "artifactType": {"const": "cover_generation_receipt"},
+    "schemaVersion": {"const": "2.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "assetId": {"type": "string", "minLength": 1},
+    "submittedPromptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "sourceSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "inputImageCount": {"const": 1},
+    "approvedAfterUsedAsInput": {"const": false},
+    "provider": {"type": "object"}
+  }
+}

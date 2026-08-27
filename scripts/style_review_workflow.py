@@ -20,6 +20,7 @@ from style_baseline import verify_approval_descriptor
 from style_atomic import atomic_write_json
 from style_contracts import build_manifest, read_json, sha256_file
 from style_dynamic_baseline import DynamicBaselineCatalog, DynamicBaselineError
+from style_effect_contract import bind_effect_contract, validate_effect_contract_draft
 from style_experience_store import DurableExperienceStore, ExperienceStoreError
 from style_reference_gate import validate_reference_interpretation, validate_visual_gate
 from style_test_pool import TestImagePool, TestPoolError
@@ -114,6 +115,15 @@ def _generate_cover(
         _verify_png(output)
         if not isinstance(receipt, dict) or receipt.get("sourceAssetId") != asset.get("assetId"):
             raise ReviewWorkflowError("cover_generation_failed: provider sourceAssetId mismatch")
+        expected_prompt_sha = _prompt_sha256(template_data)
+        if receipt.get("submittedPromptSha256") != expected_prompt_sha:
+            raise ReviewWorkflowError("cover_generation_prompt_mismatch")
+        if receipt.get("sourceSha256") != asset.get("sha256"):
+            raise ReviewWorkflowError("cover_generation_source_mismatch")
+        if receipt.get("inputImageCount") != 1:
+            raise ReviewWorkflowError("cover_generation_requires_single_image")
+        if receipt.get("approvedAfterUsedAsInput") is not False:
+            raise ReviewWorkflowError("cover_generation_used_approved_after_as_input")
         decision = checker(output, template_data, attempt) if checker else {"verdict": "pass", "reasons": []}
         if not isinstance(decision, dict) or decision.get("verdict") not in {"pass", "retry"}:
             raise ReviewWorkflowError("cover_check_invalid")
@@ -206,6 +216,105 @@ def _publish_delivery(
     return delivery
 
 
+def _assert_awaiting_formal_revision(
+    final_root: Path,
+    review_root: Path,
+    key: str,
+    revision: int,
+) -> None:
+    """Accept the formal placeholder created at human pass, and only that placeholder."""
+    manifest_file = final_root / "artifact-manifest.json"
+    template_file = final_root / "package" / "style-template.json"
+    cover_file = final_root / "package" / "cover.png"
+    if not all(path.is_file() for path in (manifest_file, template_file, cover_file)):
+        raise ReviewWorkflowError("final_package_validation_failed: existing revision is incomplete")
+    manifest = read_json(manifest_file)
+    if (
+        manifest.get("artifactType") != "style_template_catalog_entry"
+        or manifest.get("status") != "approved"
+        or manifest.get("stage") not in {"dynamic-human-pass", "legacy-catalog-migration"}
+        or manifest.get("templateKey") != key
+        or manifest.get("revision") != revision
+    ):
+        raise ReviewWorkflowError("final_package_validation_failed: existing revision is not awaiting-finalization")
+    if (
+        sha256_file(template_file) != sha256_file(review_root / "review-package/style-template.json")
+        or sha256_file(cover_file) != sha256_file(review_root / "review-package/cover.png")
+    ):
+        raise ReviewWorkflowError("final_package_validation_failed: awaiting revision identity conflict")
+
+
+def _publish_or_upgrade_revision(temporary: Path, final_root: Path, *, upgrade: bool) -> None:
+    if not upgrade:
+        os.replace(temporary, final_root)
+        return
+    backup = final_root.with_name(f".{final_root.name}.awaiting-finalization")
+    if backup.exists():
+        shutil.rmtree(backup)
+    os.replace(final_root, backup)
+    try:
+        os.replace(temporary, final_root)
+    except Exception:
+        os.replace(backup, final_root)
+        raise
+    shutil.rmtree(backup)
+
+
+def _reconcile_finalized_catalog(
+    run_root: Path,
+    final_root: Path,
+    key: str,
+    revision: int,
+) -> None:
+    catalog_files = [
+        file for file in (
+            run_root.resolve() / "统一通过模板索引.json",
+            run_root.resolve() / "已通过模板清单.json",
+        )
+        if file.is_file()
+    ]
+    if not catalog_files:
+        return
+    template_file = final_root / "package/style-template.json"
+    cover_file = final_root / "package/cover.png"
+    template = read_json(template_file)
+    originals = {file: read_json(file) for file in catalog_files}
+    updates: dict[Path, dict[str, Any]] = {}
+    reconciled_at = _now()
+    for file, original in originals.items():
+        catalog = json.loads(json.dumps(original, ensure_ascii=False))
+        if not isinstance(catalog, dict) or not isinstance(catalog.get("items"), list):
+            raise ReviewWorkflowError(f"catalog_reconciliation_failed: invalid catalog {file}")
+        matches = [
+            item for item in catalog["items"]
+            if isinstance(item, dict) and item.get("key") == key and item.get("revision") == revision
+        ]
+        if len(matches) != 1:
+            raise ReviewWorkflowError(f"catalog_reconciliation_failed: identity count {len(matches)}")
+        item = matches[0]
+        item["ossStatus"] = "finalized"
+        item["cover"] = template["cover"]
+        item["templateSha256"] = sha256_file(template_file)
+        item["effectSha256"] = sha256_file(cover_file)
+        catalog["generatedAt"] = reconciled_at
+        catalog["templateCount"] = len(catalog["items"])
+        catalog["effectImageCount"] = len(catalog["items"])
+        catalog["ossStatusCounts"] = {
+            status: sum(value.get("ossStatus") == status for value in catalog["items"] if isinstance(value, dict))
+            for status in ("finalized", "awaiting-finalization")
+        }
+        updates[file] = catalog
+    written: list[Path] = []
+    try:
+        for file, catalog in updates.items():
+            atomic_write_json(file, catalog)
+            written.append(file)
+    except Exception as error:
+        for file in written:
+            atomic_write_json(file, originals[file])
+        raise ReviewWorkflowError(f"catalog_reconciliation_failed: {error}") from error
+
+
 def create_review_package(
     template_data: dict[str, Any],
     analysis_data: dict[str, Any],
@@ -221,11 +330,24 @@ def create_review_package(
     cover_checker: Callable[[Path, dict[str, Any], int], dict[str, Any]] | None = None,
     reference_interpretation: dict[str, Any] | None = None,
     reference_visual_checker: Callable[[Path, dict[str, Any], dict[str, Any], int], dict[str, Any]] | None = None,
+    effect_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     key = template_data.get("key")
     if not isinstance(key, str):
         raise ReviewWorkflowError("template_key_missing")
     _preflight(template_data, analysis_data, analysis_filename)
+    if not isinstance(effect_contract, dict):
+        raise ReviewWorkflowError("effect_reproduction_contract_required")
+    prompt_template = template_data.get("promptTemplate")
+    if not isinstance(prompt_template, str):
+        raise ReviewWorkflowError("template_prompt_missing")
+    effect_errors = validate_effect_contract_draft(
+        effect_contract,
+        expected_key=key,
+        prompt_template=prompt_template,
+    )
+    if effect_errors:
+        raise ReviewWorkflowError(f"effect_reproduction_contract_invalid: {'; '.join(effect_errors)}")
     if analysis_filename == "style-analysis.json":
         if reference_interpretation is None:
             raise ReviewWorkflowError("reference_interpretation_required")
@@ -242,7 +364,7 @@ def create_review_package(
             if errors:
                 raise ReviewWorkflowError(f"review_package_validation_failed: {'; '.join(errors)}")
             existing_manifest = read_json(target / "artifact-manifest.json")
-            if analysis_filename == "style-analysis.json" and existing_manifest.get("schemaVersion") not in {"5.0.0", "5.1.0"}:
+            if analysis_filename == "style-analysis.json" and existing_manifest.get("schemaVersion") not in {"5.0.0", "5.1.0", "6.0.0"}:
                 raise ReviewWorkflowError("reference_gate_upgrade_required")
             assignment = read_json(target / "internal" / "test-image-assignment.json")
             pool.refresh_persisted(ledger_file)
@@ -294,14 +416,29 @@ def create_review_package(
                 reference_visual_checker=reference_visual_checker,
                 revision=revision,
             )
+            bound_effect_contract = bind_effect_contract(
+                effect_contract,
+                template_key=key,
+                prompt_template=prompt_template,
+                source_asset_id=assignment["assetId"],
+                source_sha256=str(asset["sha256"]),
+                effect_sha256=sha256_file(public / "cover.png"),
+            )
+            _write_json(internal / "effect-reproduction-contract.json", bound_effect_contract)
+            provider_evidence = dict(provider)
+            provider_evidence["sourceLocalPath"] = str(asset.get("localPath", ""))
             _write_json(internal / "cover-generation-receipt.json", {
                 "artifactType": "cover_generation_receipt",
-                "schemaVersion": "1.0.0",
+                "schemaVersion": "2.0.0",
                 "producer": "style-template-analyzer",
                 "templateKey": key,
                 "revision": revision,
                 "assetId": assignment["assetId"],
-                "provider": provider,
+                "submittedPromptSha256": provider["submittedPromptSha256"],
+                "sourceSha256": provider["sourceSha256"],
+                "inputImageCount": provider["inputImageCount"],
+                "approvedAfterUsedAsInput": provider["approvedAfterUsedAsInput"],
+                "provider": provider_evidence,
             })
             _write_json(internal / "cover-check-receipt.json", {
                 "artifactType": "cover_check_receipt",
@@ -321,7 +458,7 @@ def create_review_package(
                 temporary,
                 "review-package",
                 revision,
-                schema_version="5.1.0",
+                schema_version="6.0.0",
             ))
             errors, _ = validate_package(temporary, "review-package", "local", "", "")
             if errors:
@@ -379,12 +516,16 @@ def compile_reference(
     interpretation = compiled.get("referenceInterpretation")
     if not isinstance(interpretation, dict):
         raise ReviewWorkflowError("reference_interpretation_required")
+    effect_contract = compiled.get("effectContract")
+    if not isinstance(effect_contract, dict):
+        raise ReviewWorkflowError("effect_reproduction_contract_required")
     return create_review_package(
         compiled["template"],
         compiled["analysis"],
         pool,
         generator,
         reference_interpretation=interpretation,
+        effect_contract=effect_contract,
         **kwargs,
     )
 
@@ -434,7 +575,8 @@ def produce(
     results: list[dict[str, Any]] = []
     for candidate in candidates:
         data = candidate.get("template") if isinstance(candidate, dict) else None
-        if not isinstance(data, dict) or not isinstance(candidate.get("analysis"), dict):
+        effect_contract = candidate.get("effectContract") if isinstance(candidate, dict) else None
+        if not isinstance(data, dict) or not isinstance(candidate.get("analysis"), dict) or not isinstance(effect_contract, dict):
             results.append({"status": "failed", "code": "candidate_invalid"})
             continue
         prompt_digest = _prompt_sha256(data)
@@ -470,6 +612,7 @@ def produce(
                 analysis_filename="self-production-analysis.json",
                 extra_internal={"baseline-snapshot.json": snapshot},
                 cover_checker=cover_checker,
+                effect_contract=effect_contract,
             ))
         except (ReviewWorkflowError, TestPoolError) as error:
             results.append({"status": "failed", "code": str(error).split(":", 1)[0], "key": data.get("key")})
@@ -501,6 +644,7 @@ def record_review_decision(
         raise ReviewWorkflowError(f"review_package_validation_failed: {'; '.join(errors)}")
     assignment = read_json(review_root / "internal" / "test-image-assignment.json")
     template_data = read_json(review_root / "review-package" / "style-template.json")
+    review_manifest_version = str(read_json(review_root / "artifact-manifest.json").get("schemaVersion"))
     cover_sha = sha256_file(review_root / "review-package" / "cover.png")
     prompt_sha = _prompt_sha256(template_data)
     identity = (assignment["deliverySetId"], assignment["templateKey"], assignment["revision"])
@@ -599,7 +743,7 @@ def record_review_decision(
                 temporary,
                 "review-package",
                 identity[2],
-                schema_version="5.1.0",
+                schema_version=review_manifest_version,
             ))
             package_errors, _ = validate_package(temporary, "review-package", "local", "", "")
             if package_errors:
@@ -762,9 +906,9 @@ def finalize_approved(
     assignment = read_json(review_root / "internal" / "test-image-assignment.json")
     approval = read_json(review_root / "internal" / "approval-decision-receipt.json")
     manifest = read_json(review_root / "artifact-manifest.json")
-    if manifest.get("schemaVersion") in {"5.0.0", "5.1.0"} and not (review_root / "internal" / "experience-deposit-receipt.json").is_file():
+    if manifest.get("schemaVersion") in {"5.0.0", "5.1.0", "6.0.0"} and not (review_root / "internal" / "experience-deposit-receipt.json").is_file():
         raise ReviewWorkflowError("experience_deposit_required")
-    if manifest.get("schemaVersion") == "5.1.0" and not (review_root / "internal" / "dynamic-baseline-registration-receipt.json").is_file():
+    if manifest.get("schemaVersion") in {"5.1.0", "6.0.0"} and not (review_root / "internal" / "dynamic-baseline-registration-receipt.json").is_file():
         raise ReviewWorkflowError("dynamic_baseline_registration_required")
     if assignment.get("status") != "consumed" or approval.get("verdict") != "pass":
         raise ReviewWorkflowError("human_approval_required")
@@ -781,19 +925,22 @@ def finalize_approved(
     key = assignment["templateKey"]
     revision = assignment["revision"]
     final_root = _final_root(run_root, key, revision)
+    upgrade_awaiting_revision = False
     if final_root.is_dir():
         final_errors, _ = validate_package(final_root, "final-package", "remote", assets_domain.lower(), key_prefix)
-        if final_errors:
-            raise ReviewWorkflowError(f"final_package_validation_failed: {'; '.join(final_errors)}")
-        delivery = _publish_delivery(final_root, run_root, key, assets_domain, key_prefix)
-        return {
-            "status": "completed",
-            "revisionRoot": final_root.as_posix(),
-            "package": (final_root / "package").as_posix(),
-            "delivery": delivery.as_posix(),
-            "assetId": assignment["assetId"],
-            "idempotent": True,
-        }
+        if not final_errors:
+            delivery = _publish_delivery(final_root, run_root, key, assets_domain, key_prefix)
+            _reconcile_finalized_catalog(run_root, final_root, key, revision)
+            return {
+                "status": "completed",
+                "revisionRoot": final_root.as_posix(),
+                "package": (final_root / "package").as_posix(),
+                "delivery": delivery.as_posix(),
+                "assetId": assignment["assetId"],
+                "idempotent": True,
+            }
+        _assert_awaiting_formal_revision(final_root, review_root, key, revision)
+        upgrade_awaiting_revision = True
     final_root.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{revision}-final-", dir=final_root.parent))
     try:
@@ -831,13 +978,14 @@ def finalize_approved(
             temporary,
             "final-package",
             revision,
-            schema_version="5.1.0",
+            schema_version=str(manifest["schemaVersion"]),
         ))
         final_errors, _ = validate_package(temporary, "final-package", "remote", assets_domain.lower(), key_prefix)
         if final_errors:
             raise ReviewWorkflowError(f"final_package_validation_failed: {'; '.join(final_errors)}")
-        os.replace(temporary, final_root)
+        _publish_or_upgrade_revision(temporary, final_root, upgrade=upgrade_awaiting_revision)
         delivery = _publish_delivery(final_root, run_root, key, assets_domain, key_prefix)
+        _reconcile_finalized_catalog(run_root, final_root, key, revision)
         return {
             "status": "completed",
             "revisionRoot": final_root.as_posix(),

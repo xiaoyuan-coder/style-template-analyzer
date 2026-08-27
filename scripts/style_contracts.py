@@ -11,15 +11,15 @@ from typing import Any
 
 
 PRODUCER = "style-template-analyzer"
-PACKAGE_SCHEMA_VERSION = "5.1.0"
-SUPPORTED_PACKAGE_VERSIONS = {"1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0", "5.1.0"}
+PACKAGE_SCHEMA_VERSION = "6.0.0"
+SUPPORTED_PACKAGE_VERSIONS = {"1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0", "5.1.0", "6.0.0"}
 KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 ARTIFACT_SPECS = {
     "style_analysis": {
         "filenames": {"style-analysis.json"},
-        "schemaVersion": "2.0.0",
+        "schemaVersion": "3.0.0",
         "officialShape": False,
     },
     "style_template": {
@@ -49,6 +49,11 @@ ARTIFACT_SPECS = {
     },
     "cover_generation_receipt": {
         "filenames": {"cover-generation-receipt.json"},
+        "schemaVersion": "2.0.0",
+        "officialShape": False,
+    },
+    "effect_reproduction_contract": {
+        "filenames": {"effect-reproduction-contract.json"},
         "schemaVersion": "1.0.0",
         "officialShape": False,
     },
@@ -102,8 +107,28 @@ ARTIFACT_SPECS = {
         "schemaVersion": "1.0.0",
         "officialShape": False,
     },
+    "style_prompt_replay_batch": {
+        "filenames": {"prompt-replay-report.json"},
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
     "style_badcase_corpus": {
         "filenames": set(),
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
+    "approved_variant_binding": {
+        "filenames": {"approved-compilation-spec.json"},
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
+    "workflow_status_snapshot": {
+        "filenames": {"workflow-status-snapshot.json"},
+        "schemaVersion": "1.0.0",
+        "officialShape": False,
+    },
+    "workflow_learning_event": {
+        "filenames": {"workflow-learning-event.json"},
         "schemaVersion": "1.0.0",
         "officialShape": False,
     },
@@ -171,12 +196,19 @@ V6_STAGE_REQUIREMENTS = {
     "evaluation": V5_STAGE_REQUIREMENTS["evaluation"],
 }
 
-STAGE_REQUIREMENTS = {**LEGACY_STAGE_REQUIREMENTS, **V3_STAGE_REQUIREMENTS, **V4_STAGE_REQUIREMENTS, **V5_STAGE_REQUIREMENTS, **V6_STAGE_REQUIREMENTS}
+V7_STAGE_REQUIREMENTS = {
+    "review-package": V6_STAGE_REQUIREMENTS["review-package"] | {"effect_reproduction_contract"},
+    "final-package": V6_STAGE_REQUIREMENTS["final-package"] | {"effect_reproduction_contract"},
+    "evaluation": V6_STAGE_REQUIREMENTS["evaluation"],
+}
+
+STAGE_REQUIREMENTS = {**LEGACY_STAGE_REQUIREMENTS, **V3_STAGE_REQUIREMENTS, **V4_STAGE_REQUIREMENTS, **V5_STAGE_REQUIREMENTS, **V6_STAGE_REQUIREMENTS, **V7_STAGE_REQUIREMENTS}
 LEGACY_STAGES = set(LEGACY_STAGE_REQUIREMENTS)
 V3_STAGES = set(V3_STAGE_REQUIREMENTS)
 V4_STAGES = set(V4_STAGE_REQUIREMENTS)
 V5_STAGES = set(V5_STAGE_REQUIREMENTS)
 V6_STAGES = set(V6_STAGE_REQUIREMENTS)
+V7_STAGES = set(V7_STAGE_REQUIREMENTS)
 
 
 def artifact_type_for(path: Path, stage: str) -> str | None:
@@ -210,7 +242,11 @@ def template_key_for(data: Any, artifact_type: str) -> str | None:
 
 
 def artifact_schema_version(artifact_type: str, package_schema_version: str) -> str:
-    if artifact_type == "test_image_assignment" and package_schema_version not in {"4.0.0", "5.0.0", "5.1.0"}:
+    if artifact_type == "style_analysis" and package_schema_version != "6.0.0":
+        return "2.0.0"
+    if artifact_type == "test_image_assignment" and package_schema_version not in {"4.0.0", "5.0.0", "5.1.0", "6.0.0"}:
+        return "1.0.0"
+    if artifact_type == "cover_generation_receipt" and package_schema_version != "6.0.0":
         return "1.0.0"
     return str(ARTIFACT_SPECS[artifact_type]["schemaVersion"])
 
@@ -247,6 +283,8 @@ def build_manifest(
         else V5_STAGES
         if schema_version == "4.0.0"
         else V6_STAGES
+        if schema_version in {"5.0.0", "5.1.0"}
+        else V7_STAGES
     )
     if schema_version not in SUPPORTED_PACKAGE_VERSIONS:
         raise ValueError(f"不支持的 schemaVersion：{schema_version}")
@@ -276,13 +314,15 @@ def build_manifest(
         else V5_STAGE_REQUIREMENTS
         if schema_version == "4.0.0"
         else V6_STAGE_REQUIREMENTS
+        if schema_version in {"5.0.0", "5.1.0"}
+        else V7_STAGE_REQUIREMENTS
     )
     missing = requirements[stage] - artifact_types
     if missing:
         raise ValueError(f"{stage} 阶段缺少产物：{', '.join(sorted(missing))}")
-    if schema_version in {"2.0.0", "3.0.0", "4.0.0", "5.0.0", "5.1.0"} and stage in {"package", "prepublish", "review-package", "final-package"} and not artifact_types.intersection({"style_analysis", "self_production_analysis"}):
+    if schema_version in {"2.0.0", "3.0.0", "4.0.0", "5.0.0", "5.1.0", "6.0.0"} and stage in {"package", "prepublish", "review-package", "final-package"} and not artifact_types.intersection({"style_analysis", "self_production_analysis"}):
         raise ValueError(f"{stage} 阶段缺少分析证据")
-    if schema_version in {"5.0.0", "5.1.0"} and "style_analysis" in artifact_types:
+    if schema_version in {"5.0.0", "5.1.0", "6.0.0"} and "style_analysis" in artifact_types:
         missing_reference = {"reference_interpretation", "reference_visual_gate_receipt"} - artifact_types
         if missing_reference:
             raise ValueError(f"{stage} 阶段缺少参考图门禁证据：{', '.join(sorted(missing_reference))}")

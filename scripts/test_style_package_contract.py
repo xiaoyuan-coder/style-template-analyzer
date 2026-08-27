@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from style_contracts import ARTIFACT_SPECS, LEGACY_STAGE_REQUIREMENTS, V3_STAGE_REQUIREMENTS, V6_STAGE_REQUIREMENTS, build_manifest
+from style_contracts import ARTIFACT_SPECS, LEGACY_STAGE_REQUIREMENTS, V3_STAGE_REQUIREMENTS, V6_STAGE_REQUIREMENTS, V7_STAGE_REQUIREMENTS, build_manifest
 from test_validate_style_analysis import analysis
 from test_validate_style_evaluation import evaluation
 from test_validate_style_template import template
@@ -45,6 +45,10 @@ class StylePackageContractTests(unittest.TestCase):
         self.assertEqual(
             {key: set(value) for key, value in registry["v6Stages"].items()},
             V6_STAGE_REQUIREMENTS,
+        )
+        self.assertEqual(
+            {key: set(value) for key, value in registry["v7Stages"].items()},
+            V7_STAGE_REQUIREMENTS,
         )
         self.assertIn(registry["schemaVersion"], schema["properties"]["schemaVersion"]["enum"])
 
@@ -94,6 +98,14 @@ class StylePackageContractTests(unittest.TestCase):
             legacy = analysis()
             legacy["templateKey"] = "high-gloss-chrome-rendering"
             legacy["schemaVersion"] = "2.0"
+            legacy["transformationContract"]["contentInvariants"] = [
+                "subject-set",
+                "subject-features",
+                "associated-objects",
+                "key-relationships",
+                "source-frame",
+            ]
+            legacy["transformationContract"]["framePolicy"] = "inherit-source-aspect-ratio"
             write_json(root / "style-analysis.json", legacy)
             errors, _ = validate_package(root, "legacy", "local", "", "")
             self.assertEqual(errors, [])
@@ -191,7 +203,7 @@ class StylePackageContractTests(unittest.TestCase):
             root = Path(directory)
             manifest = {
                 "artifactType": "style_template_package",
-                "schemaVersion": "6.0.0",
+                "schemaVersion": "7.0.0",
                 "producer": "style-template-analyzer",
                 "status": "completed",
                 "revision": 1,

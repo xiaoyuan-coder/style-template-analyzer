@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/workflow-status-snapshot.schema.json",
+  "title": "StyleWorkflowStatusSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "generatedAt", "catalog", "catalogSha256", "deliveryRoot", "counts", "items"],
+  "properties": {
+    "artifactType": {"const": "style_workflow_status_snapshot"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"type": "string", "pattern": "^style-template-analyzer"},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "catalog": {"type": "string", "minLength": 1},
+    "catalogSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "deliveryRoot": {"type": ["string", "null"]},
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["templates", "catalogFinalized", "actualFinalized", "awaitingFinalization", "delivered", "missingApprovedBefore", "issueItems"],
+      "properties": {
+        "templates": {"type": "integer", "minimum": 0},
+        "catalogFinalized": {"type": "integer", "minimum": 0},
+        "actualFinalized": {"type": "integer", "minimum": 0},
+        "awaitingFinalization": {"type": "integer", "minimum": 0},
+        "delivered": {"type": "integer", "minimum": 0},
+        "missingApprovedBefore": {"type": "integer", "minimum": 0},
+        "issueItems": {"type": "integer", "minimum": 0}
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "revision", "catalogOssStatus", "actualOssStatus", "delivered", "template", "approvedAfter", "approvedBefore", "delivery", "issues"],
+        "properties": {
+          "key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+          "revision": {"type": "integer", "minimum": 1},
+          "catalogOssStatus": {"type": ["string", "null"]},
+          "actualOssStatus": {"enum": ["finalized", "awaiting-finalization"]},
+          "delivered": {"type": "boolean"},
+          "template": {"type": ["string", "null"]},
+          "approvedAfter": {"type": ["string", "null"]},
+          "approvedBefore": {"type": ["string", "null"]},
+          "delivery": {"type": ["string", "null"]},
+          "issues": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    }
+  }
+}

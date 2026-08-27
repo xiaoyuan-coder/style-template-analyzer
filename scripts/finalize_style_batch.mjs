@@ -81,27 +81,39 @@ function parseDotEnv(source) {
 }
 
 export async function loadEnvChain(startPath, baseEnv = process.env) {
-  const resolved = path.resolve(startPath);
-  let current;
-  try {
-    current = (await stat(resolved)).isDirectory() ? resolved : path.dirname(resolved);
-  } catch {
-    current = path.dirname(resolved);
-  }
-  const directories = [];
-  while (true) {
-    directories.push(current);
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
+  return loadEnvSources([startPath], baseEnv);
+}
+
+export async function loadEnvSources(startPaths, baseEnv = process.env, explicitEnvFile) {
+  if (explicitEnvFile) {
+    const file = path.resolve(explicitEnvFile);
+    if (!await exists(file)) fail(`显式 OSS 环境文件不存在：${file}`);
+    return { ...parseDotEnv(await readFile(file, "utf8")), ...baseEnv };
   }
   let loaded = {};
-  for (const directory of directories) {
-    const file = path.join(directory, ".env");
-    if (await exists(file)) {
-      loaded = parseDotEnv(await readFile(file, "utf8"));
-      break;
+  for (const startPath of startPaths.filter(Boolean)) {
+    const resolved = path.resolve(startPath);
+    let current;
+    try {
+      current = (await stat(resolved)).isDirectory() ? resolved : path.dirname(resolved);
+    } catch {
+      current = path.dirname(resolved);
     }
+    const directories = [];
+    while (true) {
+      directories.push(current);
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+    for (const directory of directories) {
+      const file = path.join(directory, ".env");
+      if (await exists(file)) {
+        loaded = parseDotEnv(await readFile(file, "utf8"));
+        break;
+      }
+    }
+    if (Object.keys(loaded).length) break;
   }
   return { ...loaded, ...baseEnv };
 }
@@ -207,6 +219,11 @@ async function createDefaultUploader(config) {
   };
 }
 
+export async function defaultCheckRemoteAsset(url) {
+  const response = await fetch(url, { method: "HEAD", redirect: "follow" });
+  if (!response.ok) fail(`受控远程图片不可读：${url} (${response.status})`);
+}
+
 function resolveLocalAsset(templateFile, field, value) {
   if (typeof value !== "string" || !value.trim()) fail(`${field} 必须是非空字符串`);
   if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return undefined;
@@ -267,14 +284,36 @@ export async function preflightStyleBatch(options) {
   const files = await collectTemplateFiles(options.input);
   if (!files.length) fail(`未找到 style-template.json：${options.input}`);
   const validateFile = options.validateFile ?? defaultValidate;
-  const templates = await readTemplates(files, validateFile, "local", {});
+  const rawTemplates = await Promise.all(files.map(async (file) => ({
+    file,
+    data: JSON.parse(await readFile(file, "utf8")),
+  })));
+  const hasRemote = rawTemplates.some(({ data }) => ASSET_FIELDS.some((name) => /^[a-z][a-z0-9+.-]*:/i.test(data[name] ?? "")));
+  let config = options.config;
+  if (hasRemote && !config) {
+    const env = await loadEnvSources(
+      [options.input, options.dataRoot, SCRIPT_DIR],
+      process.env,
+      options.envFile,
+    );
+    config = loadOssConfig(env);
+  }
+  const templates = await readTemplates(files, validateFile, hasRemote ? "either" : "local", config ?? {});
   const digests = new Set();
   let localAssets = 0;
+  let remoteAssets = 0;
+  let remoteValidated = 0;
+  const checkRemoteAsset = options.checkRemoteAsset ?? defaultCheckRemoteAsset;
   for (const template of templates) {
     for (const name of ASSET_FIELDS) {
       const value = template.data[name];
       const local = resolveLocalAsset(template.file, name, value);
-      if (!local) continue;
+      if (!local) {
+        remoteAssets += 1;
+        await checkRemoteAsset(value);
+        remoteValidated += 1;
+        continue;
+      }
       localAssets += 1;
       digests.add(await sha256(await readFile(local.resolved)));
     }
@@ -283,6 +322,8 @@ export async function preflightStyleBatch(options) {
     input: path.resolve(options.input),
     templates: templates.length,
     localAssets,
+    remoteAssets,
+    remoteValidated,
     uniqueLocalAssets: digests.size,
     duplicateAssets: localAssets - digests.size,
   };
@@ -305,11 +346,22 @@ export async function finalizeStyleBatch(options) {
   const input = path.resolve(options.input);
   const outputDir = path.resolve(options.output);
   const progressFile = options.progressFile ? path.resolve(options.progressFile) : undefined;
-  const config = options.config ?? loadOssConfig(await loadEnvChain(input));
+  const config = options.config ?? loadOssConfig(await loadEnvSources(
+    [input, options.dataRoot, SCRIPT_DIR],
+    process.env,
+    options.envFile,
+  ));
   const validateFile = options.validateFile ?? defaultValidate;
   const files = await collectTemplateFiles(input);
   if (!files.length) fail(`未找到 style-template.json：${input}`);
   const templates = await readTemplates(files, validateFile, "either", config);
+  const checkRemoteAsset = options.checkRemoteAsset ?? defaultCheckRemoteAsset;
+  for (const template of templates) {
+    for (const name of ASSET_FIELDS) {
+      const value = template.data[name];
+      if (isManagedRemoteUrl(value, config)) await checkRemoteAsset(value);
+    }
+  }
   const keys = new Set(templates.map((item) => item.data.key));
   await validateExistingOutput(outputDir, keys);
 
@@ -421,21 +473,25 @@ function parseArgs(argv) {
   let output = "";
   let stateFile;
   let progressFile;
+  let envFile;
+  let dataRoot;
   let dryRun = false;
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === "--output") output = argv[++index] ?? "";
     else if (value === "--state-file") stateFile = argv[++index];
     else if (value === "--progress-file") progressFile = argv[++index];
+    else if (value === "--env-file") envFile = argv[++index];
+    else if (value === "--data-root") dataRoot = argv[++index];
     else if (value === "--dry-run") dryRun = true;
     else if (value.startsWith("--")) fail(`未知参数：${value}`);
     else if (!input) input = value;
     else fail(`多余参数：${value}`);
   }
-  if (!input) fail("用法：style:finalize <input> [--dry-run | --output <output-dir>] [--state-file <file>] [--progress-file <file>]");
+  if (!input) fail("用法：style:finalize <input> [--dry-run | --output <output-dir>] [--state-file <file>] [--progress-file <file>] [--env-file <file>] [--data-root <dir>]");
   if (dryRun && output) fail("--dry-run 与 --output 不能同时使用");
   if (!dryRun && !output) fail("正式上传必须提供 --output");
-  return { input, output, stateFile, progressFile, dryRun };
+  return { input, output, stateFile, progressFile, envFile, dataRoot, dryRun };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

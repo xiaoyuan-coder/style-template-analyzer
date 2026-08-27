@@ -71,6 +71,21 @@ class SelfProductionStrategyTests(unittest.TestCase):
         self.assertIn("允许混合媒介", self.strategy)
         self.assertNotIn("统一媒介", self.strategy)
 
+    def test_abstraction_modes_and_decorative_motif_budget_are_hard_gates(self) -> None:
+        for marker in (
+            "representationMode", "abstractionSource", "abstractionOperator",
+            "abstractOutput", "figurativeBudget", "abstract-dominant",
+            "半抽象与抽象主导配额", "母题预算测试", "写实惯性测试",
+            "sourceOrigin", "structuralFunction",
+        ):
+            self.assertIn(marker, self.skill + self.strategy + self.goodcases)
+        for motif in ("花", "叶", "星点", "云朵", "丝带"):
+            self.assertIn(motif, self.strategy)
+        self.assertIn("每六个候选最多出现一次", self.strategy)
+        self.assertIn("至少占 40%", self.strategy)
+        self.assertIn("至少占 20%", self.strategy)
+        self.assertIn("完整写实主体占据全部注意力", self.goodcases)
+
     def test_produce_requires_human_review_before_oss(self) -> None:
         for document in (self.skill, self.strategy, self.architecture, self.oss_handoff):
             self.assertIn("OSS", document)

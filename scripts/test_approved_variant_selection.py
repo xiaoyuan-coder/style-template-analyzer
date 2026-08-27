@@ -10,8 +10,9 @@ import unittest
 from pathlib import Path
 
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
-from validate_approved_variants import validate
+from validate_approved_variants import pixel_sha256, validate
 
 
 PROMPT = (
@@ -28,7 +29,12 @@ class ApprovedVariantSelectionTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.cover = self.root / "selected.png"
         Image.new("RGB", (32, 32), (210, 120, 40)).save(self.cover)
+        self.attachment = self.root / "attachment.png"
+        metadata = PngInfo()
+        metadata.add_text("source", "user-attachment")
+        Image.open(self.cover).save(self.attachment, pnginfo=metadata)
         cover_hash = hashlib.sha256(self.cover.read_bytes()).hexdigest()
+        cover_pixel_hash = pixel_sha256(self.cover)
         prompt_hash = hashlib.sha256(PROMPT.encode("utf-8")).hexdigest()
         self.approval = {
             "artifactType": "style_template_visual_gate_decision",
@@ -38,7 +44,12 @@ class ApprovedVariantSelectionTests(unittest.TestCase):
             "approvalRevision": 1,
             "decisionAuthority": "user_attached_selection",
             "approvedCount": 1,
-            "selectionEvidence": [{"matchedKey": "fixture-style", "matchedCover": "selected.png"}],
+            "selectionEvidence": [{
+                "matchedKey": "fixture-style",
+                "matchedCover": "selected.png",
+                "attachment": "attachment.png",
+                "attachmentPixelSha256": cover_pixel_hash,
+            }],
             "decisions": [{
                 "index": 1,
                 "key": "fixture-style",
@@ -62,13 +73,17 @@ class ApprovedVariantSelectionTests(unittest.TestCase):
                 "variantNote": "用户选中总览前首版，已重新冻结机制。",
                 "selectedCover": "selected.png",
                 "selectedCoverSha256": cover_hash,
+                "selectedCoverPixelSha256": cover_pixel_hash,
                 "testAssetId": "fixture-asset",
+                "sourceSha256": "1" * 64,
+                "effectContractSha256": "2" * 64,
                 "x": "柔边平涂",
                 "y": "连续色块场",
                 "b": "来源轮廓绑定",
                 "c": "主体完整",
                 "promptTemplate": PROMPT,
                 "promptSha256": prompt_hash,
+                "generationPromptSha256": prompt_hash,
             }],
         }
         self.approval_file = self.root / "approval.json"
@@ -83,6 +98,12 @@ class ApprovedVariantSelectionTests(unittest.TestCase):
 
     def test_exact_variant_gate_passes_complete_binding(self) -> None:
         self.write()
+        self.assertNotEqual(hashlib.sha256(self.cover.read_bytes()).hexdigest(), hashlib.sha256(self.attachment.read_bytes()).hexdigest())
+        self.assertEqual(validate(self.approval_file, self.compilation_file), [])
+
+    def test_reencoded_attachment_is_matched_by_decoded_pixels(self) -> None:
+        self.write()
+        self.assertEqual(pixel_sha256(self.cover), pixel_sha256(self.attachment))
         self.assertEqual(validate(self.approval_file, self.compilation_file), [])
 
     def test_exact_variant_gate_rejects_cover_hash_drift(self) -> None:
@@ -94,6 +115,16 @@ class ApprovedVariantSelectionTests(unittest.TestCase):
         self.compilation["templates"][0]["promptSha256"] = "0" * 64
         self.write()
         self.assertTrue(any("promptSha256" in error for error in validate(self.approval_file, self.compilation_file)))
+
+    def test_exact_variant_gate_rejects_generation_prompt_drift(self) -> None:
+        self.compilation["templates"][0]["generationPromptSha256"] = "3" * 64
+        self.write()
+        self.assertTrue(any("generationPromptSha256" in error for error in validate(self.approval_file, self.compilation_file)))
+
+    def test_exact_variant_gate_rejects_attachment_pixel_drift(self) -> None:
+        Image.new("RGB", (32, 32), (0, 0, 0)).save(self.attachment)
+        self.write()
+        self.assertTrue(any("attachmentPixelSha256" in error for error in validate(self.approval_file, self.compilation_file)))
 
     def test_exact_variant_gate_rejects_approval_cover_mismatch(self) -> None:
         self.approval["decisions"][0]["cover"] = "retry.png"

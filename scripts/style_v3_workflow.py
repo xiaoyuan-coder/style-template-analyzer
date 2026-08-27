@@ -77,6 +77,10 @@ def _prompt_signature(prompt: str) -> str:
 
 def _mechanism_text(data: dict[str, Any]) -> str:
     prompt = "".join(str(data.get("promptTemplate", "")).split())
+    start = prompt.find("视觉风格：")
+    end = prompt.find("限制：", start + 1)
+    if start >= 0 and end > start:
+        return prompt[start:end]
     start = prompt.find("将全部目标画面")
     if start < 0:
         start = prompt.find("把用户上传图")

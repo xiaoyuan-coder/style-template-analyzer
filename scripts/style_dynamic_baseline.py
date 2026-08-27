@@ -202,6 +202,16 @@ class DynamicBaselineCatalog:
                 return self(event, _lifecycle_guarded=True)
         template_digest = sha256_file(template_file)
         cover_digest = sha256_file(cover_file)
+        approved_before: Path | None = None
+        generation_file = review_root / "internal/cover-generation-receipt.json"
+        if generation_file.is_file():
+            generation = read_json(generation_file)
+            provider = generation.get("provider") if isinstance(generation, dict) else None
+            source_local_path = provider.get("sourceLocalPath") if isinstance(provider, dict) else None
+            if isinstance(source_local_path, str) and source_local_path:
+                candidate = Path(source_local_path).resolve()
+                if candidate.is_file() and sha256_file(candidate) == generation.get("sourceSha256"):
+                    approved_before = candidate
         target = self.root / key / str(revision)
         with _lock(self.lock_file):
             catalog = self._read_catalog()
@@ -271,6 +281,7 @@ class DynamicBaselineCatalog:
                     "cover": template.get("cover"),
                     "approvalEvidence": _relative_or_absolute(approval_file, data_root),
                     "sourcePackage": _relative_or_absolute(public, data_root),
+                    **({"approvedBefore": _relative_or_absolute(approved_before, data_root)} if approved_before else {}),
                 }
                 catalog["items"].append(item)
                 catalog["items"].sort(key=lambda value: (value["key"], value["revision"]))

@@ -133,6 +133,12 @@ class DynamicBaselineTests(unittest.TestCase):
                 "verdict": "pass",
             }
             write_json(internal / "approval-decision-receipt.json", decision)
+            before = root / "before.jpg"
+            before.write_bytes(b"approved-before")
+            write_json(internal / "cover-generation-receipt.json", {
+                "sourceSha256": sha256_file(before),
+                "provider": {"sourceLocalPath": before.as_posix()},
+            })
             store = DynamicBaselineCatalog(catalog_file)
             first = store({"reviewRoot": review.as_posix(), "decision": decision})
             second = store({"reviewRoot": review.as_posix(), "decision": decision})
@@ -140,6 +146,8 @@ class DynamicBaselineTests(unittest.TestCase):
             self.assertTrue(second["idempotent"])
             self.assertEqual(store.load_active()[0]["count"], 1)
             self.assertTrue((root / "ink-outline/1/package/style-template.json").is_file())
+            item = json.loads(catalog_file.read_text(encoding="utf-8"))["items"][0]
+            self.assertEqual(item["approvedBefore"], "before.jpg")
 
     def test_retired_key_cannot_be_promoted_again(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import io
+import hashlib
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -56,6 +57,53 @@ class WorkflowCliTests(unittest.TestCase):
             catalog_file = catalog(root, [item])
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(main(["audit-baseline", str(catalog_file)]), 0)
+
+    def test_status_and_delivery_diagnostic_use_the_unified_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            formal = root / "formal"
+            package = formal / "fixture-style/2/package"
+            package.mkdir(parents=True)
+            before = root / "before.jpg"
+            before.write_bytes(b"before")
+            template = {"key": "fixture-style", "title": "示例", "cover": "https://assets.example.com/style/templates/a.png"}
+            template_file = package / "style-template.json"
+            template_file.write_text(json.dumps(template, ensure_ascii=False), encoding="utf-8")
+            cover_file = package / "cover.png"
+            cover_file.write_bytes(b"cover")
+            catalog_file = formal / "统一通过模板索引.json"
+            catalog_file.write_text(json.dumps({
+                "artifactType": "style_template_delivery_catalog",
+                "schemaVersion": "2.0.0",
+                "producer": "style-template-analyzer",
+                "templateCount": 1,
+                "effectImageCount": 1,
+                "ossStatusCounts": {"finalized": 1, "awaiting-finalization": 0},
+                "items": [{
+                    "key": "fixture-style",
+                    "revision": 2,
+                    "ossStatus": "finalized",
+                    "template": "fixture-style/2/package/style-template.json",
+                    "effectImage": "fixture-style/2/package/cover.png",
+                    "approvedBefore": before.as_posix(),
+                    "templateSha256": hashlib.sha256(template_file.read_bytes()).hexdigest(),
+                    "effectSha256": hashlib.sha256(cover_file.read_bytes()).hexdigest(),
+                }],
+            }), encoding="utf-8")
+            delivery = root / "delivery/fixture-style.json"
+            delivery.parent.mkdir()
+            delivery.write_text(json.dumps(template, ensure_ascii=False), encoding="utf-8")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main([
+                    "status", "--catalog", str(catalog_file),
+                    "--data-root", str(root), "--delivery-root", str(delivery.parent),
+                ]), 0)
+            self.assertEqual(json.loads(output.getvalue())["snapshot"]["counts"]["delivered"], 1)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(main([
+                    "diagnose-delivery", str(delivery), "--catalog", str(catalog_file), "--data-root", str(root),
+                ]), 0)
 
     def test_retire_template_registers_key_and_releases_consumed_test_image(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

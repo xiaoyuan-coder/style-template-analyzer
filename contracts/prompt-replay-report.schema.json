@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-prompt-replay-report.schema.json",
+  "title": "StylePromptReplayBatch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactType", "schemaVersion", "producer", "createdAt", "compilerVersion", "assessmentAuthority", "status", "items"],
+  "properties": {
+    "artifactType": {"const": "style_prompt_replay_batch"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "compilerVersion": {"type": "string", "minLength": 1},
+    "assessmentAuthority": {"type": "string", "minLength": 1},
+    "status": {"enum": ["pass", "fail"]},
+    "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/item"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "mechanism": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "status": {"enum": ["pass", "fail"]}
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "score", "promptSha256", "sourcePath", "sourceSha256", "imageInputCount", "approvedAfterUsedAsRuntimeInput", "requiredMechanisms", "generatedPath", "generatedSha256"],
+      "properties": {
+        "verdict": {"enum": ["pass", "fail"]},
+        "score": {"type": "number", "minimum": 0, "maximum": 100},
+        "promptSha256": {"$ref": "#/$defs/sha256"},
+        "sourcePath": {"type": "string", "minLength": 1},
+        "sourceSha256": {"$ref": "#/$defs/sha256"},
+        "imageInputCount": {"const": 1},
+        "approvedAfterUsedAsRuntimeInput": {"const": false},
+        "requiredMechanisms": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/mechanism"}},
+        "generatedPath": {"type": "string", "minLength": 1},
+        "generatedSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "assessmentNote", "originalReplay", "transferReplays"],
+      "properties": {
+        "key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+        "assessmentNote": {"type": "string"},
+        "originalReplay": {"$ref": "#/$defs/replay"},
+        "transferReplays": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/replay"}}
+      }
+    }
+  }
+}

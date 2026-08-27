@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memebuy.local/contracts/style-effect-reproduction-contract.schema.json",
+  "title": "StyleEffectReproductionContract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactType",
+    "schemaVersion",
+    "producer",
+    "templateKey",
+    "authorityMode",
+    "boundaryDecisions",
+    "templateConstants",
+    "unresolvedConflicts",
+    "evidenceBinding"
+  ],
+  "properties": {
+    "artifactType": {"const": "effect_reproduction_contract"},
+    "schemaVersion": {"const": "1.0.0"},
+    "producer": {"const": "style-template-analyzer"},
+    "templateKey": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,59}$"},
+    "authorityMode": {"const": "after-first"},
+    "boundaryDecisions": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dimension", "mode", "evidence", "promptDirective"],
+        "properties": {
+          "dimension": {"type": "string", "minLength": 1},
+          "mode": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 3},
+          "promptDirective": {"type": "string", "minLength": 2}
+        }
+      }
+    },
+    "templateConstants": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "sourceBinding", "required", "evidence", "promptDirective"],
+        "properties": {
+          "name": {"type": "string", "minLength": 2},
+          "sourceBinding": {"enum": ["fixed", "adaptive", "conditional"]},
+          "required": {"type": "boolean"},
+          "evidence": {"type": "string", "minLength": 3},
+          "promptDirective": {"type": "string", "minLength": 2}
+        }
+      }
+    },
+    "unresolvedConflicts": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "evidenceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceAssetId",
+        "sourceSha256",
+        "effectSha256",
+        "promptSha256",
+        "generationMode",
+        "approvedAfterUsedAsInput"
+      ],
+      "properties": {
+        "sourceAssetId": {"type": "string", "minLength": 1},
+        "sourceSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "effectSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "promptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "generationMode": {"const": "single-image-prompt-only"},
+        "approvedAfterUsedAsInput": {"const": false}
+      }
+    }
+  }
+}

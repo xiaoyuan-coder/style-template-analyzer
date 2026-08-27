@@ -13,6 +13,7 @@ from PIL import Image
 from jsonschema import Draft202012Validator
 
 from style_baseline import validate_baseline_snapshot
+from style_effect_contract import validate_effect_contract
 from style_reference_gate import validate_reference_interpretation, validate_visual_gate
 import validate_style_analysis
 import validate_style_evaluation
@@ -150,7 +151,7 @@ def validate_package(
                 manifest_schema_versions.add(data["schemaVersion"])
             manifest_v5_final = (
                 manifest_v5_final
-                or (data.get("schemaVersion") in {"4.0.0", "5.0.0", "5.1.0"} and data.get("stage") == "final-package")
+                or (data.get("schemaVersion") in {"4.0.0", "5.0.0", "5.1.0", "6.0.0"} and data.get("stage") == "final-package")
             )
             if profile == "fast-package" and (data.get("schemaVersion") != "2.0.0" or data.get("stage") != "package"):
                 errors.append(f"{file}: fast-package 要求 manifest schemaVersion=2.0.0 且 stage=package")
@@ -158,11 +159,11 @@ def validate_package(
                 if data.get("schemaVersion") != "3.0.0" or data.get("stage") != "prepublish":
                     errors.append(f"{file}: prepublish 要求 manifest schemaVersion=3.0.0 且 stage=prepublish")
             elif profile == "review-package":
-                if data.get("schemaVersion") not in {"4.0.0", "5.0.0", "5.1.0"} or data.get("stage") != "review-package":
-                    errors.append(f"{file}: review-package 要求 manifest schemaVersion=4.0.0/5.0.0/5.1.0 且 stage=review-package")
+                if data.get("schemaVersion") not in {"4.0.0", "5.0.0", "5.1.0", "6.0.0"} or data.get("stage") != "review-package":
+                    errors.append(f"{file}: review-package 要求 manifest schemaVersion=4.0.0/5.0.0/5.1.0/6.0.0 且 stage=review-package")
             elif profile == "final-package":
-                if data.get("schemaVersion") not in {"3.0.0", "4.0.0", "5.0.0", "5.1.0"} or data.get("stage") != "final-package":
-                    errors.append(f"{file}: final-package 要求 manifest schemaVersion=3.0.0/4.0.0/5.0.0/5.1.0 且 stage=final-package")
+                if data.get("schemaVersion") not in {"3.0.0", "4.0.0", "5.0.0", "5.1.0", "6.0.0"} or data.get("stage") != "final-package":
+                    errors.append(f"{file}: final-package 要求 manifest schemaVersion=3.0.0/4.0.0/5.0.0/5.1.0/6.0.0 且 stage=final-package")
         if isinstance(data, dict) and isinstance(data.get("artifacts"), list):
             for artifact in data["artifacts"]:
                 if isinstance(artifact, dict) and isinstance(artifact.get("path"), str):
@@ -189,11 +190,12 @@ def validate_package(
         reference_visual_gates = collect(root, "reference-visual-gate-receipt.json")
         experience_receipts = collect(root, "experience-deposit-receipt.json")
         dynamic_baseline_receipts = collect(root, "dynamic-baseline-registration-receipt.json")
+        effect_contracts = collect(root, "effect-reproduction-contract.json")
         if len(assignments) != 1 or len(receipts) != 1:
             errors.append(f"{profile} 必须包含唯一测试图分配与封面生成回执")
         if len(analyses) + len(self_analyses) != 1:
             errors.append(f"{profile} 必须包含且只包含一种分析证据")
-        if manifest_schema_versions.intersection({"5.0.0", "5.1.0"}) and analyses:
+        if manifest_schema_versions.intersection({"5.0.0", "5.1.0", "6.0.0"}) and analyses:
             if len(reference_interpretations) != 1 or len(reference_visual_gates) != 1:
                 errors.append(f"{profile} 的参考图模板必须包含唯一语义解释与独立视觉验收回执")
         if profile in {"prepublish", "review-package", "final-package"} and len(cover_checks) != 1:
@@ -210,6 +212,7 @@ def validate_package(
         baseline_records: list[dict[str, object]] = []
         interpretation_records: list[dict[str, object]] = []
         visual_gate_records: list[dict[str, object]] = []
+        effect_contract_records: list[dict[str, object]] = []
         for file in assignments:
             try:
                 data = read_json(file)
@@ -233,13 +236,15 @@ def validate_package(
             except (OSError, json.JSONDecodeError) as error:
                 errors.append(f"{file}: JSON 读取失败：{error}")
                 continue
-            errors.extend(f"{file}: {error}" for error in validate_schema(data, "cover-generation-receipt.schema.json"))
-            required = {"artifactType", "schemaVersion", "producer", "templateKey", "revision", "assetId", "provider"}
-            if not isinstance(data, dict) or set(data) != required:
-                errors.append(f"{file}: generation receipt 字段不符合 1.0.0 契约")
-            elif data.get("artifactType") != "cover_generation_receipt" or data.get("schemaVersion") != "1.0.0" or data.get("producer") != "style-template-analyzer":
-                errors.append(f"{file}: generation receipt 契约值不合法")
-            else:
+            version = data.get("schemaVersion") if isinstance(data, dict) else None
+            schema_name = (
+                "cover-generation-receipt-v2.schema.json"
+                if version == "2.0.0"
+                else "cover-generation-receipt.schema.json"
+            )
+            schema_errors = validate_schema(data, schema_name)
+            errors.extend(f"{file}: {error}" for error in schema_errors)
+            if not schema_errors and isinstance(data, dict):
                 receipt_records.append(data)
         cover_check_records: list[dict[str, object]] = []
         for file in cover_checks:
@@ -322,6 +327,22 @@ def validate_package(
             errors.extend(f"{file}: {error}" for error in visual_errors)
             if not visual_errors and isinstance(visual_gate, dict):
                 visual_gate_records.append(visual_gate)
+        for file in effect_contracts:
+            try:
+                effect_contract = read_json(file)
+            except (OSError, json.JSONDecodeError) as error:
+                errors.append(f"{file}: JSON 读取失败：{error}")
+                continue
+            template = template_records.get(str(effect_contract.get("templateKey")), {}) if isinstance(effect_contract, dict) else {}
+            prompt = template.get("promptTemplate") if isinstance(template, dict) else ""
+            contract_errors = validate_effect_contract(
+                effect_contract,
+                expected_key=str(effect_contract.get("templateKey", "")) if isinstance(effect_contract, dict) else "",
+                prompt_template=str(prompt) if isinstance(prompt, str) else "",
+            )
+            errors.extend(f"{file}: {error}" for error in contract_errors)
+            if not contract_errors and isinstance(effect_contract, dict):
+                effect_contract_records.append(effect_contract)
         for file in experience_receipts:
             try:
                 experience_receipt = read_json(file)
@@ -346,6 +367,29 @@ def validate_package(
                 errors.append("测试图分配与封面生成回执身份不一致")
             if template_keys and assignment.get("templateKey") not in template_keys:
                 errors.append("测试图分配 templateKey 与模板不一致")
+            if receipt.get("schemaVersion") == "2.0.0":
+                template = template_records.get(str(assignment.get("templateKey")), {})
+                prompt = template.get("promptTemplate") if isinstance(template, dict) else None
+                if isinstance(prompt, str) and receipt.get("submittedPromptSha256") != hashlib.sha256(prompt.encode("utf-8")).hexdigest():
+                    errors.append("封面生成回执 submittedPromptSha256 与模板不一致")
+        if "6.0.0" in manifest_schema_versions:
+            if len(effect_contract_records) != 1:
+                errors.append(f"{profile} manifest 6.0.0 必须包含唯一 After 复现合同")
+            if not receipt_records or receipt_records[0].get("schemaVersion") != "2.0.0":
+                errors.append(f"{profile} manifest 6.0.0 必须使用封面生成回执 2.0.0")
+        if assignment_records and receipt_records and effect_contract_records:
+            assignment = assignment_records[0]
+            receipt = receipt_records[0]
+            effect_contract = effect_contract_records[0]
+            binding = effect_contract.get("evidenceBinding", {})
+            if assignment.get("assetId") != binding.get("sourceAssetId"):
+                errors.append("测试图分配与 After 复现合同 sourceAssetId 不一致")
+            if receipt.get("sourceSha256") != binding.get("sourceSha256"):
+                errors.append("封面生成回执与 After 复现合同 sourceSha256 不一致")
+            if receipt.get("submittedPromptSha256") != binding.get("promptSha256"):
+                errors.append("封面生成回执与 After 复现合同 promptSha256 不一致")
+            if len(covers) == 1 and binding.get("effectSha256") != hashlib.sha256(covers[0].read_bytes()).hexdigest():
+                errors.append("After 复现合同 effectSha256 与封面不一致")
         if assignment_records and cover_check_records:
             assignment = assignment_records[0]
             check = cover_check_records[0]
@@ -395,9 +439,9 @@ def validate_package(
                 errors.append("审核决定 promptSha256 与模板不一致")
         if profile == "final-package" and manifest_v5_final and len(approval_records) != 1:
             errors.append("v5 final-package 必须包含唯一人工审核决定回执")
-        if profile == "final-package" and manifest_schema_versions.intersection({"5.0.0", "5.1.0"}) and len(experience_receipts) != 1:
+        if profile == "final-package" and manifest_schema_versions.intersection({"5.0.0", "5.1.0", "6.0.0"}) and len(experience_receipts) != 1:
             errors.append("v6 final-package 必须包含唯一经验沉淀回执")
-        if profile == "final-package" and "5.1.0" in manifest_schema_versions and len(dynamic_baseline_receipts) != 1:
+        if profile == "final-package" and manifest_schema_versions.intersection({"5.1.0", "6.0.0"}) and len(dynamic_baseline_receipts) != 1:
             errors.append("v6 final-package 必须包含唯一动态基线登记回执")
         if self_analysis_records and baseline_records:
             if self_analysis_records[0].get("baselineDigest") != baseline_records[0].get("digest"):

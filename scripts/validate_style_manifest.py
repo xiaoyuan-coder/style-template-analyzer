@@ -20,12 +20,14 @@ from style_contracts import (
     V4_STAGES,
     V5_STAGES,
     V6_STAGES,
+    V7_STAGES,
     STAGE_REQUIREMENTS,
     LEGACY_STAGE_REQUIREMENTS,
     V3_STAGE_REQUIREMENTS,
     V4_STAGE_REQUIREMENTS,
     V5_STAGE_REQUIREMENTS,
     V6_STAGE_REQUIREMENTS,
+    V7_STAGE_REQUIREMENTS,
     SEMVER_RE,
     read_json,
     sha256_file,
@@ -88,6 +90,8 @@ def validate_data(data: Any, manifest_file: Path, *, verify_files: bool = True) 
         else V5_STAGES
         if package_version == "4.0.0"
         else V6_STAGES
+        if package_version in {"5.0.0", "5.1.0"}
+        else V7_STAGES
     )
     if stage not in supported_stages:
         errors.append("stage 不合法")
@@ -170,14 +174,16 @@ def validate_data(data: Any, manifest_file: Path, *, verify_files: bool = True) 
         else V5_STAGE_REQUIREMENTS
         if package_version == "4.0.0"
         else V6_STAGE_REQUIREMENTS
+        if package_version in {"5.0.0", "5.1.0"}
+        else V7_STAGE_REQUIREMENTS
     )
     if stage in supported_stages:
         missing = requirements[stage] - seen_types
         if missing:
             errors.append(f"{stage} 阶段缺少产物：{', '.join(sorted(missing))}")
-        if package_version in {"2.0.0", "3.0.0", "4.0.0", "5.0.0", "5.1.0"} and stage in {"package", "prepublish", "review-package", "final-package"} and not seen_types.intersection({"style_analysis", "self_production_analysis"}):
+        if package_version in {"2.0.0", "3.0.0", "4.0.0", "5.0.0", "5.1.0", "6.0.0"} and stage in {"package", "prepublish", "review-package", "final-package"} and not seen_types.intersection({"style_analysis", "self_production_analysis"}):
             errors.append(f"{stage} 阶段缺少分析证据")
-        if package_version in {"5.0.0", "5.1.0"} and "style_analysis" in seen_types:
+        if package_version in {"5.0.0", "5.1.0", "6.0.0"} and "style_analysis" in seen_types:
             missing_reference = {"reference_interpretation", "reference_visual_gate_receipt"} - seen_types
             if missing_reference:
                 errors.append(f"{stage} 阶段缺少参考图门禁证据：{', '.join(sorted(missing_reference))}")

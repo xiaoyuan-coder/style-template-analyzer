@@ -28,7 +28,7 @@ def contract() -> dict:
             "subject-features",
             "associated-objects",
             "key-relationships",
-            "source-frame",
+            "frame-policy",
         ],
         "templateConstants": [],
         "allowedDerivations": [],
@@ -44,7 +44,7 @@ def contract() -> dict:
 
 def analysis() -> dict:
     return {
-        "schemaVersion": "2.0.0",
+        "schemaVersion": "3.0.0",
         "templateKey": "soft-film-grain-salvage",
         "referenceAsset": "../../01-输入/0031.png",
         "referenceType": "single-style-reference",
@@ -83,7 +83,26 @@ class AnalysisValidatorTests(unittest.TestCase):
     def test_accepts_legacy_schema_version(self) -> None:
         data = analysis()
         data["schemaVersion"] = "2.0"
+        data["transformationContract"]["contentInvariants"][-1] = "source-frame"
         self.assertEqual(MODULE.validate_data(data), [])
+
+    def test_accepts_legacy_semver_schema_version(self) -> None:
+        data = analysis()
+        data["schemaVersion"] = "2.0.0"
+        data["transformationContract"]["contentInvariants"][-1] = "source-frame"
+        self.assertEqual(MODULE.validate_data(data), [])
+
+    def test_current_schema_accepts_approved_after_frame_override(self) -> None:
+        data = analysis()
+        data["transformationContract"]["framePolicy"] = "fixed-template-aspect-ratio"
+        self.assertEqual(MODULE.validate_data(data), [])
+
+    def test_legacy_schema_rejects_frame_override(self) -> None:
+        data = analysis()
+        data["schemaVersion"] = "2.0.0"
+        data["transformationContract"]["contentInvariants"][-1] = "source-frame"
+        data["transformationContract"]["framePolicy"] = "fixed-template-aspect-ratio"
+        self.assertTrue(any("framePolicy" in error for error in MODULE.validate_data(data)))
 
     def test_accepts_print_ready_artwork_classification(self) -> None:
         data = analysis()

@@ -17,18 +17,46 @@ SPEC.loader.exec_module(MODULE)
 
 
 PROMPT = (
-    "只使用用户上传图这一张图片作为唯一图片输入和唯一内容来源。保留全部显著主体与主体集合；全部显著主体逐一对应用户图中的原主体，未经本提示词明确授权，不复制、不合并、不删减、不增殖人物、动物、物体或其关联物；每个呈现实例持续保留身份、面部与体型、轮廓、发型、花纹配色、服装、配饰、手持物和关键关系。输出画幅方向与宽高比跟随用户上传图。"
-    "本模板仅改变绘制语言与材质表现，保留主体形态、姿态与视角、呈现实例、环境和构图。"
-    "将全部目标画面完整重绘为高反射抛光铬材质：连续圆润曲面概括形体，宽阔高光与深色反射带塑造体积，柔和接触阴影稳定空间，所有区域使用同一非摄影成像。"
-    "只生成用户内容和明确授权的变换；模板未授权的新主体、物件、关系或可读文字均为越权新增。"
-    "原照片像素、写实皮肤、真实毛发、摄影景深、镜头光照和滤镜式叠加痕迹必须完全消失。"
+    "任务：\n"
+    "请以用户上传图为内容依据，从零完整重绘整张画面。\n\n"
+    "保留：\n"
+    "保留全部显著主体；全部显著主体逐一对应用户图中的原主体，不复制、不合并、不删减、不增殖人物、动物、物体或其关联物。保留身份、面部与体型、轮廓、发型、花纹配色、服装、配饰、手持物和关键关系。\n\n"
+    "画面重构：\n"
+    "仅改变绘制语言与材质表现，保持主体形态、姿态与视角、环境和构图。\n\n"
+    "构图：\n"
+    "输出画幅方向与宽高比跟随用户上传图。\n\n"
+    "视觉风格：\n"
+    "将整张画面重绘为高反射抛光铬材质。用连续圆润曲面概括形体，宽阔高光与深色反射带塑造体积，柔和接触阴影稳定空间。\n\n"
+    "限制：\n"
+    "不要新增用户图中没有的主体、物件、关系或可读文字。不要保留照片像素、写实皮肤、真实毛发、摄影景深、镜头光照或滤镜叠加痕迹。"
 )
 
 STRUCTURED_PROMPT = (
     PROMPT.replace(
-        "本模板仅改变绘制语言与材质表现，保留主体形态、姿态与视角、呈现实例、环境和构图。",
-        "本模板允许将主体派生为多个新动作和局部放大实例，重建环境并重组构图；固定使用 CRT 扫描屏、3–6 个复古系统浮窗、菜单栏和图表面板。",
+        "仅改变绘制语言与材质表现，保持主体形态、姿态与视角、环境和构图。",
+        "允许改变主体的呈现次数和视角，将主体拆成多个新动作和局部放大画面，重建环境并重组构图。使用 CRT 扫描屏、3–6 个复古系统浮窗、菜单栏和图表面板。",
     )
+)
+
+V2_PROMPT = (
+    "任务：\n"
+    "以用户上传图为内容依据，从零完整重绘整张图像，生成一幅可直接用于服装印制的镜面块面图案。\n\n"
+    "保留：\n"
+    "保留全部显著主体并与用户图中的原主体逐一对应；保持身份、发型、服装、配饰、手持物和关键关系。基础主体不复制、不合并、不删减、不增殖。\n\n"
+    "变换权限：\n"
+    "仅改变绘制语言与材质表现，保持主体形态、姿态、视角、环境和主要构图。\n\n"
+    "核心效果：\n"
+    "把主体全部重建为连续圆润的高反射镜面块体，以宽阔高光和深色反射带共同塑造体积。\n\n"
+    "空间结构：\n"
+    "输出画幅方向与宽高比跟随用户上传图；保持原主体位置、尺度、遮挡和前后层级。\n\n"
+    "内容映射：\n"
+    "用户图中的每个主体和关联物在原位置获得同一镜面材质，轮廓、接触关系和归属保持清楚。\n\n"
+    "视觉风格：\n"
+    "使用抛光铬金属表面、干净硬边、宽白高光、深灰反射带和柔和接触阴影，整张画面使用一致的非摄影渲染。\n\n"
+    "完成判据：\n"
+    "最终图必须同时保持全部主体身份、原构图和完整镜面覆盖；缩略图下仍能读出圆润块面与宽阔高光。\n\n"
+    "限制：\n"
+    "不要新增用户图中没有的主体、物件、关系或可读文字。不要保留照片像素、写实皮肤、真实毛发、摄影景深、镜头光照或滤镜叠加痕迹。"
 )
 
 
@@ -102,6 +130,28 @@ class ValidatorTests(unittest.TestCase):
             data["promptTemplate"] = STRUCTURED_PROMPT
             self.assertEqual(MODULE.validate_data(data, file, "local", "", ""), [])
 
+    def test_accepts_v2_nine_section_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "style.png").write_bytes(b"image")
+            file = root / "style-template.json"
+            data = template()
+            data["promptTemplate"] = V2_PROMPT
+            self.assertEqual(MODULE.validate_data(data, file, "local", "", ""), [])
+
+    def test_rejects_v2_prompt_with_empty_section(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "style.png").write_bytes(b"image")
+            file = root / "style-template.json"
+            data = template()
+            data["promptTemplate"] = V2_PROMPT.replace(
+                "核心效果：\n把主体全部重建为连续圆润的高反射镜面块体，以宽阔高光和深色反射带共同塑造体积。",
+                "核心效果：\n",
+            )
+            errors = MODULE.validate_data(data, file, "local", "", "")
+            self.assertTrue(any("核心效果" in error and "不得为空" in error for error in errors))
+
     def test_accepts_equivalent_source_frame_inheritance_wording(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -111,6 +161,18 @@ class ValidatorTests(unittest.TestCase):
             data["promptTemplate"] = PROMPT.replace(
                 "输出画幅方向与宽高比跟随用户上传图。",
                 "输出画布严格保持用户上传图的相同方向与宽高比。",
+            )
+            self.assertEqual(MODULE.validate_data(data, file, "local", "", ""), [])
+
+    def test_accepts_explicit_after_authorized_frame_override(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "style.png").write_bytes(b"image")
+            file = root / "style-template.json"
+            data = template()
+            data["promptTemplate"] = PROMPT.replace(
+                "输出画幅方向与宽高比跟随用户上传图。",
+                "允许改变画幅方向与宽高比，输出固定为竖版四比五画幅。",
             )
             self.assertEqual(MODULE.validate_data(data, file, "local", "", ""), [])
 
@@ -170,7 +232,7 @@ class ValidatorTests(unittest.TestCase):
                 "输出画幅方向与宽高比跟随用户上传图。", ""
             )
             errors = MODULE.validate_data(data, file, "local", "", "")
-            self.assertTrue(any("画幅继承要求" in error for error in errors))
+            self.assertTrue(any("画幅策略" in error for error in errors))
 
     def test_rejects_prompt_without_subject_feature_continuity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -189,8 +251,8 @@ class ValidatorTests(unittest.TestCase):
             file = root / "style-template.json"
             data = template()
             data["promptTemplate"] = PROMPT.replace(
-                "全部显著主体逐一对应用户图中的原主体，未经本提示词明确授权，不复制、不合并、不删减、不增殖人物、动物、物体或其关联物；",
-                "全部显著主体保持可识别；",
+                "全部显著主体逐一对应用户图中的原主体，不复制、不合并、不删减、不增殖人物、动物、物体或其关联物。",
+                "全部显著主体保持可识别。",
             )
             errors = MODULE.validate_data(data, file, "local", "", "")
             self.assertTrue(any("主体逐一对应与实例控制" in error for error in errors))
@@ -201,9 +263,22 @@ class ValidatorTests(unittest.TestCase):
             (root / "style.png").write_bytes(b"image")
             file = root / "style-template.json"
             data = template()
-            data["promptTemplate"] = PROMPT.replace("本模板仅改变", "将画面转换为")
+            data["promptTemplate"] = PROMPT.replace(
+                "仅改变绘制语言与材质表现，保持主体形态、姿态与视角、环境和构图。",
+                "保持画面的基本可识别性。",
+            )
             errors = MODULE.validate_data(data, file, "local", "", "")
             self.assertTrue(any("变换权限声明" in error for error in errors))
+
+    def test_rejects_contract_transcript_language(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "style.png").write_bytes(b"image")
+            file = root / "style-template.json"
+            data = template()
+            data["promptTemplate"] = PROMPT.replace("保留全部显著主体", "主体范围遵循前文来源绑定")
+            errors = MODULE.validate_data(data, file, "local", "", "")
+            self.assertTrue(any("内部合同或悬空指代用语" in error for error in errors))
 
     def test_rejects_legacy_dual_image_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

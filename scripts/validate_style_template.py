@@ -44,12 +44,49 @@ SINGLE_IMAGE_MARKERS = ("唯一图片输入", "唯一输入图片", "唯一图�
 FRAME_DIRECTION_MARKERS = ("画幅方向", "横竖方向", "画布方向", "相同方向", "方向一致")
 ASPECT_RATIO_MARKERS = ("宽高比", "纵横比")
 FRAME_INHERITANCE_MARKERS = ("跟随", "保持", "继承", "沿用")
+FRAME_OVERRIDE_MARKERS = (
+    "允许改变画幅方向与宽高比",
+    "允许重设画幅方向与宽高比",
+    "输出固定为",
+    "画幅固定为",
+    "按模板固定画幅",
+    "自适应重定画幅",
+)
 SUBJECT_SCOPE_MARKERS = ("全部显著主体", "默认保留显著主体", "主主体")
 SUBJECT_FEATURE_MARKERS = ("发型", "服装", "配饰", "手持物")
-SUBJECT_CORRESPONDENCE_MARKERS = ("逐一对应", "一一对应")
+SUBJECT_CORRESPONDENCE_MARKERS = ("逐一对应", "一一对应", "与原主体对应")
 INSTANCE_CONTROL_MARKERS = ("不复制", "不合并", "不删减", "不增殖")
-TRANSFORMATION_PERMISSION_MARKERS = ("本模板允许", "本模板仅改变", "本模板保留")
-CONTENT_BOUNDARY_MARKERS = ("模板未授权", "越权新增")
+TRANSFORMATION_PERMISSION_MARKERS = ("允许改变", "仅改变")
+CONTENT_BOUNDARY_MARKERS = ("不要新增", "不得新增", "禁止新增")
+LEGACY_TRANSFORMATION_PERMISSION_MARKERS = ("本模板允许", "本模板仅改变", "本模板保留", "允许每个主体")
+LEGACY_CONTENT_BOUNDARY_MARKERS = ("模板未授权", "越权新增")
+LEGACY_RUNTIME_PROMPT_SECTIONS = ("任务", "保留", "画面重构", "构图", "视觉风格", "限制")
+RUNTIME_PROMPT_SECTIONS = (
+    "任务",
+    "保留",
+    "变换权限",
+    "核心效果",
+    "空间结构",
+    "内容映射",
+    "视觉风格",
+    "完成判据",
+    "限制",
+)
+V2_SECTION_MARKERS = ("变换权限", "核心效果", "空间结构", "内容映射", "完成判据")
+INTERNAL_PROMPT_TERMS = (
+    "Approved After",
+    "promptDirective",
+    "复现合同",
+    "复现边界",
+    "来源绑定",
+    "边界策略",
+    "图形语言：",
+    "空间语法：",
+    "模板必现",
+    "越权新增",
+    "前文",
+    "上述授权",
+)
 REFERENCE_DEPENDENCY_TERMS = (
     "第 1 张图片",
     "第1张图片",
@@ -155,11 +192,75 @@ def check_prompt(errors: list[str], value: Any) -> None:
     check_text(errors, "promptTemplate", value, 120, 1200)
     if not isinstance(value, str):
         return
+    all_sections = tuple(dict.fromkeys((*LEGACY_RUNTIME_PROMPT_SECTIONS, *RUNTIME_PROMPT_SECTIONS)))
+    all_matches = {
+        section: list(re.finditer(rf"(?m)^{re.escape(section)}：", value))
+        for section in all_sections
+    }
+    sections = (
+        RUNTIME_PROMPT_SECTIONS
+        if any(all_matches[section] for section in V2_SECTION_MARKERS)
+        else LEGACY_RUNTIME_PROMPT_SECTIONS
+    )
+    section_matches = {section: all_matches[section] for section in sections}
+    structured_prompt = any(section_matches.values())
+    if structured_prompt:
+        section_positions: list[int] = []
+        for section, matches in section_matches.items():
+            if len(matches) != 1:
+                errors.append(f"promptTemplate 必须且只能包含一个“{section}：”段落")
+            else:
+                section_positions.append(matches[0].start())
+        if len(section_positions) == len(sections):
+            if section_positions != sorted(section_positions):
+                errors.append(f"promptTemplate 段落顺序必须为{'、'.join(sections)}")
+            else:
+                for index, section in enumerate(sections):
+                    match = section_matches[section][0]
+                    end = (
+                        section_matches[sections[index + 1]][0].start()
+                        if index + 1 < len(sections)
+                        else len(value)
+                    )
+                    if not value[match.end():end].strip():
+                        errors.append(f"promptTemplate 的“{section}：”段落不得为空")
+        internal_terms = [term for term in INTERNAL_PROMPT_TERMS if term in value]
+        if internal_terms:
+            errors.append(f"promptTemplate 含有内部合同或悬空指代用语：{', '.join(internal_terms)}")
+    frame_inheritance = (
+        any(marker in value for marker in SOURCE_IMAGE_MARKERS)
+        and any(marker in value for marker in FRAME_DIRECTION_MARKERS)
+        and any(marker in value for marker in ASPECT_RATIO_MARKERS)
+        and any(marker in value for marker in FRAME_INHERITANCE_MARKERS)
+    )
+    frame_override = (
+        any(marker in value for marker in FRAME_OVERRIDE_MARKERS)
+        and ("画幅" in value or "输出" in value)
+    )
+    input_check = any(marker in value for marker in SOURCE_IMAGE_MARKERS)
+    transformation_check = any(marker in value for marker in TRANSFORMATION_PERMISSION_MARKERS)
+    if sections == RUNTIME_PROMPT_SECTIONS and section_matches["变换权限"]:
+        permission_start = section_matches["变换权限"][0].end()
+        permission_end = section_matches["核心效果"][0].start() if section_matches["核心效果"] else len(value)
+        permission_text = value[permission_start:permission_end]
+        transformation_check = any(marker in permission_text for marker in ("允许", "仅", "保持"))
+    content_boundary_check = any(marker in value for marker in CONTENT_BOUNDARY_MARKERS)
+    photo_pixel_check = (
+        ("照片像素" in value or "原图像素" in value)
+        and any(marker in value for marker in ("不要保留", "不得保留", "完全消失"))
+    )
+    if not structured_prompt:
+        input_check = (
+            input_check
+            and any(marker in value for marker in SINGLE_IMAGE_MARKERS)
+            and "唯一内容来源" in value
+        )
+        transformation_check = any(marker in value for marker in LEGACY_TRANSFORMATION_PERMISSION_MARKERS)
+        content_boundary_check = all(marker in value for marker in LEGACY_CONTENT_BOUNDARY_MARKERS)
+        photo_pixel_check = "原照片像素" in value and "消失" in value
     checks = [
-        (any(marker in value for marker in SOURCE_IMAGE_MARKERS)
-         and any(marker in value for marker in SINGLE_IMAGE_MARKERS)
-         and "唯一内容来源" in value,
-         "prompt-only 输入权限：用户上传图是唯一图片输入和唯一内容来源"),
+        (input_check,
+         "输入对象：明确以用户上传图为内容依据"),
         (any(marker in value for marker in ("完整重绘", "完整重建", "全部重绘")),
          "全像素重绘要求"),
         (any(marker in value for marker in SUBJECT_SCOPE_MARKERS),
@@ -169,17 +270,14 @@ def check_prompt(errors: list[str], value: Any) -> None:
         (any(marker in value for marker in SUBJECT_CORRESPONDENCE_MARKERS)
          and all(marker in value for marker in INSTANCE_CONTROL_MARKERS),
          "主体逐一对应与实例控制：不复制、不合并、不删减、不增殖"),
-        (any(marker in value for marker in TRANSFORMATION_PERMISSION_MARKERS),
+        (transformation_check,
          "变换权限声明：本模板允许、仅改变或保留的内容"),
-        (all(marker in value for marker in CONTENT_BOUNDARY_MARKERS),
-         "越权内容边界：模板未授权内容属于越权新增"),
-        ("原照片像素" in value and "消失" in value,
-         "去摄影化要求：原照片像素必须消失"),
-        (any(marker in value for marker in SOURCE_IMAGE_MARKERS)
-         and any(marker in value for marker in FRAME_DIRECTION_MARKERS)
-         and any(marker in value for marker in ASPECT_RATIO_MARKERS)
-         and any(marker in value for marker in FRAME_INHERITANCE_MARKERS),
-         "画幅继承要求：输出方向与宽高比跟随用户上传图"),
+        (content_boundary_check,
+         "内容边界：直接说明不要新增的内容"),
+        (photo_pixel_check,
+         "去摄影化要求：不要保留照片像素"),
+        (frame_inheritance or frame_override,
+         "画幅策略：继承用户图，或按 Approved After 合同明确重定方向与宽高比"),
     ]
     for valid, label in checks:
         if not valid:

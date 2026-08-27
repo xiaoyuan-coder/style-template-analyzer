@@ -11,6 +11,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+from jsonschema import Draft202012Validator
+
 from style_contracts import KEY_RE, SEMVER_RE
 from validate_style_template import check_prompt
 
@@ -24,6 +27,16 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def pixel_sha256(path: Path) -> str:
+    """Hash decoded pixels so harmless PNG re-encoding keeps the same identity."""
+    with Image.open(path) as source:
+        image = source.convert("RGBA")
+        digest = hashlib.sha256()
+        digest.update(f"RGBA:{image.width}x{image.height}\0".encode("ascii"))
+        digest.update(image.tobytes())
+        return digest.hexdigest()
 
 
 def read_json(path: Path, errors: list[str], label: str) -> Any:
@@ -57,6 +70,12 @@ def validate(approval_file: Path, compilation_file: Path) -> list[str]:
         return errors
     if not check_envelope(compilation, "style_template_approved_compilation_spec", "compilation", errors):
         return errors
+    schema = json.loads(
+        (Path(__file__).parents[1] / "contracts/approved-variant-binding.schema.json").read_text(encoding="utf-8")
+    )
+    for error in sorted(Draft202012Validator(schema).iter_errors(compilation), key=lambda item: list(item.path)):
+        location = ".".join(str(part) for part in error.path)
+        errors.append(f"compilation schema {location or '<root>'}: {error.message}")
     if approval.get("deliverySetId") != compilation.get("deliverySetId"):
         errors.append("deliverySetId 不一致")
     if approval.get("approvalRevision") != compilation.get("approvalRevision"):
@@ -135,6 +154,19 @@ def validate(approval_file: Path, compilation_file: Path) -> list[str]:
             errors.append(f"{key}.selectedCover 文件不存在：{cover_path}")
         elif isinstance(cover_hash, str) and sha256(cover_path) != cover_hash:
             errors.append(f"{key}.selectedCoverSha256 与实际文件不一致")
+        cover_pixel_hash = item.get("selectedCoverPixelSha256")
+        if not isinstance(cover_pixel_hash, str) or not SHA256_RE.fullmatch(cover_pixel_hash):
+            errors.append(f"{key}.selectedCoverPixelSha256 无效")
+        elif cover_path.is_file():
+            try:
+                if pixel_sha256(cover_path) != cover_pixel_hash:
+                    errors.append(f"{key}.selectedCoverPixelSha256 与实际像素不一致")
+            except OSError as error:
+                errors.append(f"{key}.selectedCoverPixelSha256 无法读取图片：{error}")
+        for field in ("sourceSha256", "effectContractSha256"):
+            digest = item.get(field)
+            if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+                errors.append(f"{key}.{field} 无效")
         prompt = item.get("promptTemplate")
         prompt_hash = item.get("promptSha256")
         prompt_errors: list[str] = []
@@ -144,6 +176,11 @@ def validate(approval_file: Path, compilation_file: Path) -> list[str]:
             errors.append(f"{key}.promptSha256 无效")
         elif isinstance(prompt, str) and hashlib.sha256(prompt.encode("utf-8")).hexdigest() != prompt_hash:
             errors.append(f"{key}.promptSha256 与 promptTemplate 不一致")
+        generation_prompt_hash = item.get("generationPromptSha256")
+        if not isinstance(generation_prompt_hash, str) or not SHA256_RE.fullmatch(generation_prompt_hash):
+            errors.append(f"{key}.generationPromptSha256 无效")
+        elif generation_prompt_hash != prompt_hash:
+            errors.append(f"{key}.generationPromptSha256 与最终 promptSha256 不一致，需恢复所选版本真实提示词并重新生成")
 
     evidence = approval.get("selectionEvidence")
     if approval.get("decisionAuthority") == "user_attached_selection":
@@ -157,6 +194,27 @@ def validate(approval_file: Path, compilation_file: Path) -> list[str]:
                     errors.append(f"{key} 缺少附件匹配证据")
                 elif item.get("matchedCover") != decision.get("cover"):
                     errors.append(f"{key} 附件匹配证据未指向批准 cover")
+                else:
+                    compiled = compiled_by_key.get(key, {})
+                    expected_pixel_hash = compiled.get("selectedCoverPixelSha256")
+                    attachment_pixel_hash = item.get("attachmentPixelSha256")
+                    if not isinstance(attachment_pixel_hash, str) or not SHA256_RE.fullmatch(attachment_pixel_hash):
+                        errors.append(f"{key}.attachmentPixelSha256 无效")
+                    elif attachment_pixel_hash != expected_pixel_hash:
+                        errors.append(f"{key}.attachmentPixelSha256 未匹配批准 cover 像素")
+                    attachment = item.get("attachment")
+                    if not isinstance(attachment, str) or not attachment.strip():
+                        errors.append(f"{key}.attachment 缺失")
+                    else:
+                        attachment_path = approval_file.parent / attachment
+                        if not attachment_path.is_file():
+                            errors.append(f"{key}.attachment 文件不存在：{attachment_path}")
+                        else:
+                            try:
+                                if pixel_sha256(attachment_path) != attachment_pixel_hash:
+                                    errors.append(f"{key}.attachmentPixelSha256 与附件实际像素不一致")
+                            except OSError as error:
+                                errors.append(f"{key}.attachment 无法读取图片：{error}")
     return errors
 
 

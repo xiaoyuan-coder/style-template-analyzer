@@ -70,6 +70,36 @@ def relative(path: Path, data_root: Path) -> str:
     return path.resolve().relative_to(data_root.resolve()).as_posix()
 
 
+def relative_or_absolute(path: Path, data_root: Path) -> str:
+    try:
+        return relative(path, data_root)
+    except ValueError:
+        return path.resolve().as_posix()
+
+
+def discover_approved_before(entry: ApprovedEntry) -> Path | None:
+    roots = [entry.source_package]
+    if entry.source_package.name in {"package", "review-package"}:
+        roots.append(entry.source_package.parent / "internal")
+    roots.extend([entry.source_package / "internal", entry.source_package.parent / "internal"])
+    for root in dict.fromkeys(path.resolve() for path in roots):
+        receipt = root / "cover-generation-receipt.json"
+        if receipt.is_file():
+            try:
+                data = read_json(receipt)
+            except (OSError, json.JSONDecodeError):
+                data = {}
+            provider = data.get("provider") if isinstance(data, dict) else None
+            value = provider.get("sourceLocalPath") if isinstance(provider, dict) else None
+            if isinstance(value, str) and value and Path(value).is_file():
+                return Path(value).resolve()
+        for name in ("before.png", "before.jpg", "before.jpeg", "source.png", "source.jpg", "source.jpeg"):
+            candidate = root / name
+            if candidate.is_file():
+                return candidate.resolve()
+    return None
+
+
 def package_entry(
     package: Path,
     provenance: str,
@@ -318,6 +348,7 @@ def catalog_item(entry: ApprovedEntry, output_root: Path, data_root: Path) -> di
     template = read_json(template_path)
     remote_cover = template.get("cover")
     oss_status = "finalized" if isinstance(remote_cover, str) and remote_cover.startswith("https://") else "awaiting-finalization"
+    approved_before = discover_approved_before(entry)
     return {
         "id": f"{entry.key}-r{entry.revision}",
         "key": entry.key,
@@ -333,6 +364,7 @@ def catalog_item(entry: ApprovedEntry, output_root: Path, data_root: Path) -> di
         "cover": remote_cover,
         "approvalEvidence": relative(entry.approval_evidence, data_root),
         "sourcePackage": relative(entry.source_package, data_root),
+        **({"approvedBefore": relative_or_absolute(approved_before, data_root)} if approved_before else {}),
     }
 
 

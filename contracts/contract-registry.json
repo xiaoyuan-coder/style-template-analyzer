@@ -1,11 +1,11 @@
 {
-  "schemaVersion": "5.1.0",
-  "supportedMajors": [1, 2, 3, 4, 5],
+  "schemaVersion": "6.0.0",
+  "supportedMajors": [1, 2, 3, 4, 5, 6],
   "producer": "style-template-analyzer",
   "packageArtifactType": "style_template_package",
   "artifactTypes": {
     "style_analysis": {
-      "schemaVersion": "2.0.0",
+      "schemaVersion": "3.0.0",
       "businessFile": "style-analysis.json",
       "officialShape": false
     },
@@ -35,8 +35,13 @@
       "officialShape": false
     },
     "cover_generation_receipt": {
-      "schemaVersion": "1.0.0",
+      "schemaVersion": "2.0.0",
       "businessFile": "cover-generation-receipt.json",
+      "officialShape": false
+    },
+    "effect_reproduction_contract": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "effect-reproduction-contract.json",
       "officialShape": false
     },
     "cover_check_receipt": {
@@ -89,9 +94,29 @@
       "businessFile": "source-package-receipt.json",
       "officialShape": false
     },
+    "style_prompt_replay_batch": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "prompt-replay-report.json",
+      "officialShape": false
+    },
     "style_badcase_corpus": {
       "schemaVersion": "1.0.0",
       "businessFile": "style-badcase-corpus.json",
+      "officialShape": false
+    },
+    "approved_variant_binding": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "approved-compilation-spec.json",
+      "officialShape": false
+    },
+    "workflow_status_snapshot": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "workflow-status-snapshot.json",
+      "officialShape": false
+    },
+    "workflow_learning_event": {
+      "schemaVersion": "1.0.0",
+      "businessFile": "workflow-learning-event.json",
       "officialShape": false
     }
   },
@@ -118,6 +143,11 @@
   "v6Stages": {
     "review-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt"],
     "final-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "cover_check_receipt", "approval_decision_receipt", "oss_finalization_receipt"],
+    "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"]
+  },
+  "v7Stages": {
+    "review-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "effect_reproduction_contract", "cover_check_receipt"],
+    "final-package": ["style_template", "style_cover", "test_image_assignment", "cover_generation_receipt", "effect_reproduction_contract", "cover_check_receipt", "approval_decision_receipt", "oss_finalization_receipt"],
     "evaluation": ["style_template", "style_cover", "style_evaluation", "source_package_receipt"]
   },
   "legacyPayloadVersions": {

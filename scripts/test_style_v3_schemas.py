@@ -14,6 +14,7 @@ from PIL import Image
 from referencing import Registry, Resource
 
 from style_baseline import build_baseline_snapshot
+from style_effect_contract import BOUNDARY_MODES
 from style_test_pool import TestImagePool, TestPoolError, normalize_asset
 from test_validate_style_template import template
 
@@ -136,6 +137,45 @@ class V3SchemaTests(unittest.TestCase):
             "assetId": "fixture-asset",
             "provider": {"model": "fake"},
         })
+        self.validate("cover-generation-receipt-v2.schema.json", {
+            "artifactType": "cover_generation_receipt",
+            "schemaVersion": "2.0.0",
+            "producer": "style-template-analyzer",
+            "templateKey": "fixture-style",
+            "revision": 1,
+            "assetId": "fixture-asset",
+            "submittedPromptSha256": "a" * 64,
+            "sourceSha256": "b" * 64,
+            "inputImageCount": 1,
+            "approvedAfterUsedAsInput": False,
+            "provider": {"model": "fake"},
+        })
+        self.validate("effect-reproduction-contract.schema.json", {
+            "artifactType": "effect_reproduction_contract",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer",
+            "templateKey": "fixture-style",
+            "authorityMode": "after-first",
+            "boundaryDecisions": [
+                {
+                    "dimension": dimension,
+                    "mode": next(iter(sorted(modes))),
+                    "evidence": f"evidence for {dimension}",
+                    "promptDirective": "用户上传图",
+                }
+                for dimension, modes in BOUNDARY_MODES.items()
+            ],
+            "templateConstants": [],
+            "unresolvedConflicts": [],
+            "evidenceBinding": {
+                "sourceAssetId": "fixture-asset",
+                "sourceSha256": "b" * 64,
+                "effectSha256": "c" * 64,
+                "promptSha256": "a" * 64,
+                "generationMode": "single-image-prompt-only",
+                "approvedAfterUsedAsInput": False,
+            },
+        })
         self.validate("cover-check-receipt.schema.json", {
             "artifactType": "cover_check_receipt",
             "schemaVersion": "1.0.0",
@@ -196,6 +236,53 @@ class V3SchemaTests(unittest.TestCase):
     def test_dynamic_baseline_pointer_shape(self) -> None:
         pointer = json.loads((Path(__file__).parents[1] / "references" / "dynamic-baseline.json").read_text(encoding="utf-8"))
         self.validate("dynamic-baseline-pointer.schema.json", pointer)
+
+    def test_operational_learning_and_binding_contracts(self) -> None:
+        prompt = "任务：" + "完整重绘用户上传图。" * 20
+        prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        self.validate("approved-variant-binding.schema.json", {
+            "artifactType": "style_template_approved_compilation_spec",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer@8.7.0",
+            "deliverySetId": "fixture-set",
+            "approvalRevision": 1,
+            "finalizationAuthorization": "human-approved",
+            "templateCount": 1,
+            "templates": [{
+                "index": 1,
+                "key": "fixture-style",
+                "selectedVariant": "first-pass",
+                "variantNote": "用户选择首版视觉 revision。",
+                "selectedCover": "selected.png",
+                "selectedCoverSha256": "a" * 64,
+                "selectedCoverPixelSha256": "b" * 64,
+                "testAssetId": "fixture-asset",
+                "sourceSha256": "c" * 64,
+                "effectContractSha256": "d" * 64,
+                "x": "有限色平涂",
+                "y": "空间重组",
+                "b": "来源角色绑定",
+                "c": "完整轮廓",
+                "promptTemplate": prompt,
+                "promptSha256": prompt_sha,
+                "generationPromptSha256": prompt_sha,
+            }],
+        })
+        self.validate("workflow-learning-event.schema.json", {
+            "artifactType": "style_workflow_learning_event",
+            "schemaVersion": "1.0.0",
+            "producer": "style-template-analyzer@8.7.0",
+            "learnedAt": "2026-08-27T00:00:00Z",
+            "category": "selected-variant-drift",
+            "symptom": "附件选择与当前候选不一致",
+            "humanExpectation": "交付用户实际选中的视觉版本",
+            "rootCause": "审批按文件名绑定，重编码后无法匹配",
+            "rule": "使用解码像素哈希冻结精确视觉 revision",
+            "gate": "附件、cover 与提示词三方哈希闭合",
+            "automation": "validate-approved-variants",
+            "regressionCase": "同像素不同 PNG 字节仍能匹配",
+            "evidence": ["scripts/test_approved_variant_selection.py"],
+        })
 
     def test_high_recognition_pool_shape(self) -> None:
         asset_id = "anchor-" + "a" * 20
